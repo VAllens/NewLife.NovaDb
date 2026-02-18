@@ -93,6 +93,41 @@ public enum ErrorCode
     ConstraintViolation = 4003,
 
     /// <summary>
+    /// 分片未找到
+    /// </summary>
+    ShardNotFound = 4004,
+
+    /// <summary>
+    /// 分片数量超限
+    /// </summary>
+    ShardLimitExceeded = 4005,
+
+    /// <summary>
+    /// 流不存在
+    /// </summary>
+    StreamNotFound = 4006,
+
+    /// <summary>
+    /// 消费组不存在
+    /// </summary>
+    ConsumerGroupNotFound = 4007,
+
+    /// <summary>
+    /// 消息已过期
+    /// </summary>
+    MessageExpired = 4008,
+
+    /// <summary>
+    /// 键不存在
+    /// </summary>
+    KeyNotFound = 4009,
+
+    /// <summary>
+    /// 键已过期
+    /// </summary>
+    KeyExpired = 4010,
+
+    /// <summary>
     /// 不支持的操作
     /// </summary>
     NotSupported = 5000,
@@ -110,5 +145,45 @@ public enum ErrorCode
     /// <summary>
     /// 磁盘空间不足
     /// </summary>
-    DiskFull = 6001
+    DiskFull = 6001,
+
+    /// <summary>
+    /// 连接失败
+    /// </summary>
+    ConnectionFailed = 7000,
+
+    /// <summary>
+    /// 认证失败
+    /// </summary>
+    AuthenticationFailed = 7001,
+
+    /// <summary>
+    /// 协议错误
+    /// </summary>
+    ProtocolError = 7002,
+
+    /// <summary>
+    /// 会话过期
+    /// </summary>
+    SessionExpired = 7003,
+
+    /// <summary>
+    /// 复制错误
+    /// </summary>
+    ReplicationError = 8000,
+
+    /// <summary>
+    /// 节点不存在
+    /// </summary>
+    NodeNotFound = 8001,
+
+    /// <summary>
+    /// 非主节点
+    /// </summary>
+    NotMaster = 8002,
+
+    /// <summary>
+    /// 复制延迟过大
+    /// </summary>
+    ReplicationLag = 8003
 }
