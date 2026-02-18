@@ -103,6 +103,21 @@ public enum ErrorCode
     ShardLimitExceeded = 4005,
 
     /// <summary>
+    /// 流不存在
+    /// </summary>
+    StreamNotFound = 4006,
+
+    /// <summary>
+    /// 消费组不存在
+    /// </summary>
+    ConsumerGroupNotFound = 4007,
+
+    /// <summary>
+    /// 消息已过期
+    /// </summary>
+    MessageExpired = 4008,
+
+    /// <summary>
     /// 不支持的操作
     /// </summary>
     NotSupported = 5000,

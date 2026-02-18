@@ -49,6 +49,12 @@ public class DbOptions
     /// 页缓存大小（页数），默认 1024 页
     /// </summary>
     public Int32 PageCacheSize { get; set; } = 1024;
+
+    /// <summary>时序分片粒度（小时），默认 1 小时</summary>
+    public Int32 FluxPartitionHours { get; set; } = 1;
+
+    /// <summary>时序数据默认 TTL（秒），0 表示永不过期</summary>
+    public Int64 FluxDefaultTtlSeconds { get; set; } = 0;
 }
 
 /// <summary>
