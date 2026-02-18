@@ -1,0 +1,81 @@
+using System.Data;
+using System.Data.Common;
+
+namespace NewLife.NovaDb.Client;
+
+/// <summary>NovaDb ADO.NET 连接</summary>
+public class NovaDbConnection : DbConnection
+{
+    private String _connectionString = String.Empty;
+    private ConnectionState _state = ConnectionState.Closed;
+    private String _database = String.Empty;
+
+    /// <summary>连接字符串。格式：嵌入模式 "Data Source=path"，服务器模式 "Server=host;Port=3306"</summary>
+    public override String ConnectionString
+    {
+        get => _connectionString;
+        set => _connectionString = value ?? String.Empty;
+    }
+
+    /// <summary>数据库名称</summary>
+    public override String Database => _database;
+
+    /// <summary>数据源</summary>
+    public override String DataSource
+    {
+        get
+        {
+            if (IsEmbedded)
+                return ParseValue("Data Source");
+
+            return ParseValue("Server");
+        }
+    }
+
+    /// <summary>服务器版本</summary>
+    public override String ServerVersion => "1.0";
+
+    /// <summary>连接状态</summary>
+    public override ConnectionState State => _state;
+
+    /// <summary>是否为嵌入模式</summary>
+    public Boolean IsEmbedded => _connectionString.Contains("Data Source=", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>打开连接</summary>
+    public override void Open() => _state = ConnectionState.Open;
+
+    /// <summary>关闭连接</summary>
+    public override void Close() => _state = ConnectionState.Closed;
+
+    /// <summary>切换数据库</summary>
+    /// <param name="databaseName">数据库名称</param>
+    public override void ChangeDatabase(String databaseName) => _database = databaseName;
+
+    /// <summary>开始事务</summary>
+    /// <param name="isolationLevel">隔离级别</param>
+    /// <returns>事务实例</returns>
+    protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) => new NovaDbTransaction(this);
+
+    /// <summary>创建命令</summary>
+    /// <returns>命令实例</returns>
+    protected override DbCommand CreateDbCommand() => new NovaDbCommand { Connection = this };
+
+    #region 辅助
+
+    /// <summary>从连接字符串中解析指定键的值</summary>
+    private String ParseValue(String key)
+    {
+        if (String.IsNullOrEmpty(_connectionString)) return String.Empty;
+
+        foreach (var part in _connectionString.Split(';'))
+        {
+            var trimmed = part.Trim();
+            if (trimmed.StartsWith(key + "=", StringComparison.OrdinalIgnoreCase))
+                return trimmed[(key.Length + 1)..].Trim();
+        }
+
+        return String.Empty;
+    }
+
+    #endregion
+}

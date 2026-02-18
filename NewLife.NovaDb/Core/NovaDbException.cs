@@ -145,5 +145,25 @@ public enum ErrorCode
     /// <summary>
     /// 磁盘空间不足
     /// </summary>
-    DiskFull = 6001
+    DiskFull = 6001,
+
+    /// <summary>
+    /// 连接失败
+    /// </summary>
+    ConnectionFailed = 7000,
+
+    /// <summary>
+    /// 认证失败
+    /// </summary>
+    AuthenticationFailed = 7001,
+
+    /// <summary>
+    /// 协议错误
+    /// </summary>
+    ProtocolError = 7002,
+
+    /// <summary>
+    /// 会话过期
+    /// </summary>
+    SessionExpired = 7003
 }
