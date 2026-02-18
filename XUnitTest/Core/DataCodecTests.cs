@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using NewLife.NovaDb.Core;
 using Xunit;
 
@@ -72,8 +72,8 @@ public class DataCodecTests
     public void TestEncodeDecodeByteArray()
     {
         var value = new byte[] { 1, 2, 3, 4, 5 };
-        var encoded = _codec.Encode(value, DataType.ByteArray);
-        var decoded = (byte[])_codec.Decode(encoded, 0, DataType.ByteArray)!;
+        var encoded = _codec.Encode(value, DataType.Binary);
+        var decoded = (byte[])_codec.Decode(encoded, 0, DataType.Binary)!;
 
         Assert.Equal(value, decoded);
     }
@@ -106,7 +106,7 @@ public class DataCodecTests
         Assert.Equal(8, _codec.GetEncodedLength(3.14, DataType.Double));
         Assert.Equal(16, _codec.GetEncodedLength(123.45M, DataType.Decimal));
         Assert.Equal(4 + 5, _codec.GetEncodedLength("Hello", DataType.String));
-        Assert.Equal(4 + 3, _codec.GetEncodedLength(new byte[] { 1, 2, 3 }, DataType.ByteArray));
+        Assert.Equal(4 + 3, _codec.GetEncodedLength(new byte[] { 1, 2, 3 }, DataType.Binary));
         Assert.Equal(8, _codec.GetEncodedLength(DateTime.Now, DataType.DateTime));
         Assert.Equal(4, _codec.GetEncodedLength(null, DataType.String));
     }

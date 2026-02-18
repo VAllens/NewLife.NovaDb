@@ -1,41 +1,35 @@
-namespace NewLife.NovaDb.Core;
+﻿namespace NewLife.NovaDb.Core;
 
-/// <summary>
-/// 数据值编解码器接口
-/// </summary>
+/// <summary>数据值编解码器接口</summary>
 public interface IDataCodec
 {
-    /// <summary>
-    /// 编码值到二进制
-    /// </summary>
+    /// <summary>编码值到二进制</summary>
     /// <param name="value">要编码的值</param>
     /// <param name="dataType">数据类型</param>
     /// <returns>编码后的字节数组</returns>
     Byte[] Encode(Object? value, DataType dataType);
 
-    /// <summary>
-    /// 从二进制解码值
-    /// </summary>
+    /// <summary>从二进制解码值</summary>
     /// <param name="buffer">字节数组</param>
     /// <param name="offset">起始偏移</param>
     /// <param name="dataType">数据类型</param>
     /// <returns>解码后的值</returns>
     Object? Decode(Byte[] buffer, Int32 offset, DataType dataType);
 
-    /// <summary>
-    /// 获取编码后的长度
-    /// </summary>
+    /// <summary>获取编码后的长度</summary>
     /// <param name="value">要编码的值</param>
     /// <param name="dataType">数据类型</param>
     /// <returns>编码后的字节长度</returns>
     Int32 GetEncodedLength(Object? value, DataType dataType);
 }
 
-/// <summary>
-/// 默认数据编解码器实现
-/// </summary>
+/// <summary>默认数据编解码器实现</summary>
 public class DefaultDataCodec : IDataCodec
 {
+    /// <summary>编码值到二进制</summary>
+    /// <param name="value">要编码的值</param>
+    /// <param name="dataType">数据类型</param>
+    /// <returns>编码后的字节数组</returns>
     public Byte[] Encode(Object? value, DataType dataType)
     {
         if (value == null)
@@ -52,12 +46,17 @@ public class DefaultDataCodec : IDataCodec
             DataType.Double => BitConverter.GetBytes((Double)value),
             DataType.Decimal => EncodeDecimal((Decimal)value),
             DataType.String => EncodeString((String)value),
-            DataType.ByteArray => EncodeByteArray((Byte[])value),
+            DataType.Binary => EncodeByteArray((Byte[])value),
             DataType.DateTime => BitConverter.GetBytes(((DateTime)value).Ticks),
             _ => throw new NotSupportedException($"Unsupported data type: {dataType}")
         };
     }
 
+    /// <summary>从二进制解码值</summary>
+    /// <param name="buffer">字节数组</param>
+    /// <param name="offset">起始偏移</param>
+    /// <param name="dataType">数据类型</param>
+    /// <returns>解码后的值</returns>
     public Object? Decode(Byte[] buffer, Int32 offset, DataType dataType)
     {
         // 检查是否为 NULL
@@ -78,12 +77,16 @@ public class DefaultDataCodec : IDataCodec
             DataType.Double => BitConverter.ToDouble(buffer, offset),
             DataType.Decimal => DecodeDecimal(buffer, offset),
             DataType.String => DecodeString(buffer, offset),
-            DataType.ByteArray => DecodeByteArray(buffer, offset),
+            DataType.Binary => DecodeByteArray(buffer, offset),
             DataType.DateTime => new DateTime(BitConverter.ToInt64(buffer, offset)),
             _ => throw new NotSupportedException($"Unsupported data type: {dataType}")
         };
     }
 
+    /// <summary>获取编码后的长度</summary>
+    /// <param name="value">要编码的值</param>
+    /// <param name="dataType">数据类型</param>
+    /// <returns>编码后的字节长度</returns>
     public Int32 GetEncodedLength(Object? value, DataType dataType)
     {
         if (value == null)
@@ -99,7 +102,7 @@ public class DefaultDataCodec : IDataCodec
             DataType.Double => 8,
             DataType.Decimal => 16, // 128-bit
             DataType.String => 4 + System.Text.Encoding.UTF8.GetByteCount((String)value), // 长度前缀 + UTF-8
-            DataType.ByteArray => 4 + ((Byte[])value).Length, // 长度前缀 + 数据
+            DataType.Binary => 4 + ((Byte[])value).Length, // 长度前缀 + 数据
             DataType.DateTime => 8, // Ticks
             _ => throw new NotSupportedException($"Unsupported data type: {dataType}")
         };

@@ -817,7 +817,7 @@ public class SqlEngine : IDisposable
             "FLOAT" or "DOUBLE" or "REAL" => DataType.Double,
             "DECIMAL" or "NUMERIC" => DataType.Decimal,
             "VARCHAR" or "TEXT" or "STRING" or "NVARCHAR" => DataType.String,
-            "BLOB" or "BINARY" or "VARBINARY" or "BYTES" => DataType.ByteArray,
+            "BINARY" or "VARBINARY" or "BYTES" or "BLOB" => DataType.Binary,
             "DATETIME" or "TIMESTAMP" or "DATE" => DataType.DateTime,
             _ => throw new NovaException(ErrorCode.SyntaxError, $"Unknown data type: {typeName}")
         };
@@ -845,7 +845,7 @@ public class SqlEngine : IDisposable
             DataType.Decimal => Convert.ToDecimal(value),
             DataType.String => Convert.ToString(value)!,
             DataType.DateTime => Convert.ToDateTime(value),
-            DataType.ByteArray when value is Byte[] bytes => bytes,
+            DataType.Binary when value is Byte[] bytes => bytes,
             _ => value
         };
     }
