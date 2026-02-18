@@ -9,6 +9,7 @@ public class NovaDbConnection : DbConnection
     private String _connectionString = String.Empty;
     private ConnectionState _state = ConnectionState.Closed;
     private String _database = String.Empty;
+    private NovaDbClient? _client;
 
     /// <summary>连接字符串。格式：嵌入模式 "Data Source=path"，服务器模式 "Server=host;Port=3306"</summary>
     public override String ConnectionString
@@ -41,11 +42,31 @@ public class NovaDbConnection : DbConnection
     /// <summary>是否为嵌入模式</summary>
     public Boolean IsEmbedded => _connectionString.Contains("Data Source=", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>远程客户端（服务器模式）</summary>
+    public NovaDbClient? Client => _client;
+
     /// <summary>打开连接</summary>
-    public override void Open() => _state = ConnectionState.Open;
+    public override void Open()
+    {
+        if (!IsEmbedded)
+        {
+            var server = ParseValue("Server");
+            var portStr = ParseValue("Port");
+            var port = Int32.TryParse(portStr, out var p) ? p : 3306;
+            _client = new NovaDbClient($"tcp://{server}:{port}");
+            _client.Open();
+        }
+
+        _state = ConnectionState.Open;
+    }
 
     /// <summary>关闭连接</summary>
-    public override void Close() => _state = ConnectionState.Closed;
+    public override void Close()
+    {
+        _client?.Close("Connection.Close");
+        _client = null;
+        _state = ConnectionState.Closed;
+    }
 
     /// <summary>切换数据库</summary>
     /// <param name="databaseName">数据库名称</param>
@@ -59,6 +80,17 @@ public class NovaDbConnection : DbConnection
     /// <summary>创建命令</summary>
     /// <returns>命令实例</returns>
     protected override DbCommand CreateDbCommand() => new NovaDbCommand { Connection = this };
+
+    /// <summary>释放资源</summary>
+    /// <param name="disposing">是否由 Dispose 调用</param>
+    protected override void Dispose(Boolean disposing)
+    {
+        base.Dispose(disposing);
+
+        _client?.Close(disposing ? "Dispose" : "GC");
+        _client?.Dispose();
+        _client = null;
+    }
 
     #region 辅助
 

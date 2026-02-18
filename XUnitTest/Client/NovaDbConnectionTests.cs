@@ -1,6 +1,8 @@
 using System;
 using System.Data;
+using System.Threading.Tasks;
 using NewLife.NovaDb.Client;
+using NewLife.NovaDb.Server;
 using Xunit;
 
 namespace XUnitTest.Client;
@@ -8,7 +10,7 @@ namespace XUnitTest.Client;
 /// <summary>NovaDb 连接单元测试</summary>
 public class NovaDbConnectionTests
 {
-    [Fact(DisplayName = "测试打开和关闭连接")]
+    [Fact(DisplayName = "测试打开和关闭嵌入模式连接")]
     public void TestOpenAndClose()
     {
         using var conn = new NovaDbConnection
@@ -20,6 +22,7 @@ public class NovaDbConnectionTests
 
         conn.Open();
         Assert.Equal(ConnectionState.Open, conn.State);
+        Assert.Null(conn.Client); // embedded mode, no remote client
 
         conn.Close();
         Assert.Equal(ConnectionState.Closed, conn.State);
@@ -197,5 +200,47 @@ public class NovaDbConnectionTests
 
         collection.Clear();
         Assert.Equal(0, collection.Count);
+    }
+
+    [Fact(DisplayName = "测试客户端服务端端到端通信")]
+    public async Task TestClientServerEndToEnd()
+    {
+        // Start a server on a random port
+        using var server = new NovaDbServer(0);
+        server.Start();
+        var port = server.Port;
+        Assert.True(port > 0);
+
+        // Create client and connect
+        using var client = new NovaDbClient($"tcp://127.0.0.1:{port}");
+        client.Open();
+        Assert.True(client.IsConnected);
+
+        // Test ping
+        var result = await client.PingAsync();
+        Assert.NotNull(result);
+        Assert.NotEmpty(result);
+
+        // Test execute
+        var rows = await client.ExecuteAsync("SELECT 1");
+        Assert.Equal(0, rows); // stub returns 0
+
+        // Test begin transaction
+        var txId = await client.BeginTransactionAsync();
+        Assert.NotNull(txId);
+        Assert.NotEmpty(txId);
+
+        // Test commit
+        var committed = await client.CommitTransactionAsync(txId!);
+        Assert.True(committed);
+
+        // Test rollback
+        var txId2 = await client.BeginTransactionAsync();
+        var rolledBack = await client.RollbackTransactionAsync(txId2!);
+        Assert.True(rolledBack);
+
+        // Close
+        client.Close();
+        Assert.False(client.IsConnected);
     }
 }
