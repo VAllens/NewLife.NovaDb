@@ -14,6 +14,7 @@ public class SqlEngine : IDisposable
     private readonly Dictionary<String, TableSchema> _schemas = new(StringComparer.OrdinalIgnoreCase);
     private readonly Object _lock = new();
     private Boolean _disposed;
+    private Int32 _lastAffectedRows;
 
     /// <summary>事务管理器</summary>
     public TransactionManager TxManager => _txManager;
@@ -75,11 +76,11 @@ public class SqlEngine : IDisposable
         };
     }
 
-    private SqlResult TrackDdl(SqlResult result) { Metrics.ExecuteCount++; Metrics.DdlCount++; return result; }
-    private SqlResult TrackQuery(SqlResult result) { Metrics.ExecuteCount++; Metrics.QueryCount++; return result; }
-    private SqlResult TrackInsert(SqlResult result) { Metrics.ExecuteCount++; Metrics.InsertCount++; return result; }
-    private SqlResult TrackUpdate(SqlResult result) { Metrics.ExecuteCount++; Metrics.UpdateCount++; return result; }
-    private SqlResult TrackDelete(SqlResult result) { Metrics.ExecuteCount++; Metrics.DeleteCount++; return result; }
+    private SqlResult TrackDdl(SqlResult result) { Metrics.ExecuteCount++; Metrics.DdlCount++; _lastAffectedRows = result.AffectedRows; return result; }
+    private SqlResult TrackQuery(SqlResult result) { Metrics.ExecuteCount++; Metrics.QueryCount++; _lastAffectedRows = result.AffectedRows; return result; }
+    private SqlResult TrackInsert(SqlResult result) { Metrics.ExecuteCount++; Metrics.InsertCount++; _lastAffectedRows = result.AffectedRows; return result; }
+    private SqlResult TrackUpdate(SqlResult result) { Metrics.ExecuteCount++; Metrics.UpdateCount++; _lastAffectedRows = result.AffectedRows; return result; }
+    private SqlResult TrackDelete(SqlResult result) { Metrics.ExecuteCount++; Metrics.DeleteCount++; _lastAffectedRows = result.AffectedRows; return result; }
 
     #region DDL 执行
 
@@ -1243,6 +1244,32 @@ public class SqlEngine : IDisposable
                 var ldDate = Convert.ToDateTime(args[0]);
                 return new DateTime(ldDate.Year, ldDate.Month, DateTime.DaysInMonth(ldDate.Year, ldDate.Month));
 
+            case "DATE_FORMAT":
+                if (args.Count < 2 || args[0] == null || args[1] == null) return null;
+                var dfDate = Convert.ToDateTime(args[0]);
+                var dfFormat = Convert.ToString(args[1])!
+                    .Replace("%Y", "yyyy").Replace("%m", "MM").Replace("%d", "dd")
+                    .Replace("%H", "HH").Replace("%i", "mm").Replace("%s", "ss")
+                    .Replace("%M", "MMMM").Replace("%W", "dddd");
+                return dfDate.ToString(dfFormat);
+
+            case "TIMESTAMPDIFF":
+                if (args.Count < 3 || args[0] == null || args[1] == null || args[2] == null) return null;
+                var tdUnit = Convert.ToString(args[0])!.ToUpper();
+                var tdDate1 = Convert.ToDateTime(args[1]);
+                var tdDate2 = Convert.ToDateTime(args[2]);
+                var tdDiff = tdDate2 - tdDate1;
+                return tdUnit switch
+                {
+                    "YEAR" => tdDate2.Year - tdDate1.Year,
+                    "MONTH" => (tdDate2.Year - tdDate1.Year) * 12 + (tdDate2.Month - tdDate1.Month),
+                    "DAY" => (Int32)tdDiff.TotalDays,
+                    "HOUR" => (Int64)tdDiff.TotalHours,
+                    "MINUTE" => (Int64)tdDiff.TotalMinutes,
+                    "SECOND" => (Int64)tdDiff.TotalSeconds,
+                    _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown TIMESTAMPDIFF unit: {tdUnit}")
+                };
+
             // 类型转换函数
             case "CONVERT":
                 if (args.Count < 2) return null;
@@ -1282,6 +1309,12 @@ public class SqlEngine : IDisposable
 
             case "CONNECTION_ID":
                 return 0;
+
+            case "ROW_COUNT":
+                return _lastAffectedRows;
+
+            case "LAST_INSERT_ID":
+                return 0; // NovaDb 不支持自增主键，返回 0
 
             // 哈希函数
             case "MD5":

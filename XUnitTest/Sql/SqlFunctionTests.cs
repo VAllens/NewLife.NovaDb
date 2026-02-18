@@ -259,6 +259,41 @@ public class SqlFunctionTests : IDisposable
         Assert.IsType<DateTime>(r.Rows[0][0]);
     }
 
+    [Fact(DisplayName = "DATE_FORMAT 日期格式化")]
+    public void TestDateFormat()
+    {
+        var r = _engine.Execute("SELECT DATE_FORMAT('2025-06-15 14:30:45', '%Y-%m-%d')");
+        Assert.Equal("2025-06-15", r.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "DATE_FORMAT 时间格式化")]
+    public void TestDateFormatTime()
+    {
+        var r = _engine.Execute("SELECT DATE_FORMAT('2025-06-15 14:30:45', '%H:%i:%s')");
+        Assert.Equal("14:30:45", r.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "TIMESTAMPDIFF 日期差值按天")]
+    public void TestTimestampDiffDays()
+    {
+        var r = _engine.Execute("SELECT TIMESTAMPDIFF('DAY', '2025-06-10', '2025-06-15')");
+        Assert.Equal(5, Convert.ToInt32(r.Rows[0][0]));
+    }
+
+    [Fact(DisplayName = "TIMESTAMPDIFF 日期差值按月")]
+    public void TestTimestampDiffMonths()
+    {
+        var r = _engine.Execute("SELECT TIMESTAMPDIFF('MONTH', '2025-01-15', '2025-06-15')");
+        Assert.Equal(5, Convert.ToInt32(r.Rows[0][0]));
+    }
+
+    [Fact(DisplayName = "TIMESTAMPDIFF 日期差值按小时")]
+    public void TestTimestampDiffHours()
+    {
+        var r = _engine.Execute("SELECT TIMESTAMPDIFF('HOUR', '2025-06-15 10:00:00', '2025-06-15 14:00:00')");
+        Assert.Equal(4, Convert.ToInt32(r.Rows[0][0]));
+    }
+
     #endregion
 
     #region 类型转换
@@ -356,6 +391,22 @@ public class SqlFunctionTests : IDisposable
     public void TestConnectionId()
     {
         var r = _engine.Execute("SELECT CONNECTION_ID()");
+        Assert.Equal(0, r.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "ROW_COUNT 上条语句影响行数")]
+    public void TestRowCount()
+    {
+        CreateUsersTable();
+        // 上次插入影响 1 行
+        var r = _engine.Execute("SELECT ROW_COUNT()");
+        Assert.Equal(1, r.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "LAST_INSERT_ID 返回 0")]
+    public void TestLastInsertId()
+    {
+        var r = _engine.Execute("SELECT LAST_INSERT_ID()");
         Assert.Equal(0, r.Rows[0][0]);
     }
 
