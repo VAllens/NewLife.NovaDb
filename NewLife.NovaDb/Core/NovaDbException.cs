@@ -118,6 +118,16 @@ public enum ErrorCode
     MessageExpired = 4008,
 
     /// <summary>
+    /// 键不存在
+    /// </summary>
+    KeyNotFound = 4009,
+
+    /// <summary>
+    /// 键已过期
+    /// </summary>
+    KeyExpired = 4010,
+
+    /// <summary>
     /// 不支持的操作
     /// </summary>
     NotSupported = 5000,
