@@ -15,6 +15,9 @@ public class ReplicationManager : IDisposable
     private readonly List<WalRecord> _replicationBuffer = new();
     private UInt64 _masterLsn;
 
+    /// <summary>复制缓冲区最大记录数，默认 100 万</summary>
+    public Int32 MaxBufferSize { get; set; } = 1_000_000;
+
     /// <summary>主节点信息</summary>
     public NodeInfo MasterInfo { get; }
 
@@ -130,6 +133,12 @@ public class ReplicationManager : IDisposable
             _masterLsn++;
             record.Lsn = _masterLsn;
             _replicationBuffer.Add(record);
+
+            // 超过缓冲区限制时移除最旧的记录
+            while (_replicationBuffer.Count > MaxBufferSize)
+            {
+                _replicationBuffer.RemoveAt(0);
+            }
         }
     }
 

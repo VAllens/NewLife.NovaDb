@@ -151,6 +151,11 @@ public class NovaDbServerTests : IDisposable
     public void TestHandleTransactionRequests()
     {
         var session = _server.CreateSession();
+
+        // 先握手认证
+        var handshake = new ProtocolHeader { RequestType = RequestType.Handshake, SequenceId = 0 };
+        _server.HandleRequest(handshake, [], session);
+
         var types = new[] { RequestType.BeginTx, RequestType.CommitTx, RequestType.RollbackTx };
 
         foreach (var reqType in types)
@@ -208,6 +213,11 @@ public class NovaDbServerTests : IDisposable
     public void TestHandleExecuteReturnsNotImplemented()
     {
         var session = _server.CreateSession();
+
+        // 先握手认证
+        var handshake = new ProtocolHeader { RequestType = RequestType.Handshake, SequenceId = 0 };
+        _server.HandleRequest(handshake, [], session);
+
         var header = new ProtocolHeader
         {
             RequestType = RequestType.Execute,
@@ -217,5 +227,28 @@ public class NovaDbServerTests : IDisposable
         var response = _server.HandleRequest(header, [], session);
         var respHeader = ProtocolHeader.FromBytes(response);
         Assert.Equal(ResponseStatus.Error, respHeader.Status);
+    }
+
+    [Fact(DisplayName = "测试未认证请求被拒绝")]
+    public void TestUnauthenticatedRequestRejected()
+    {
+        var session = _server.CreateSession();
+        Assert.False(session.IsAuthenticated);
+
+        var header = new ProtocolHeader
+        {
+            RequestType = RequestType.Execute,
+            SequenceId = 1
+        };
+
+        var response = _server.HandleRequest(header, [], session);
+        var respHeader = ProtocolHeader.FromBytes(response);
+        Assert.Equal(ResponseStatus.Error, respHeader.Status);
+
+        // 解析错误消息
+        var payload = new Byte[respHeader.PayloadLength];
+        Array.Copy(response, ProtocolHeader.HeaderSize, payload, 0, respHeader.PayloadLength);
+        var message = Encoding.UTF8.GetString(payload);
+        Assert.Contains("Authentication required", message);
     }
 }

@@ -71,6 +71,9 @@ public class ProtocolHeader
     /// <summary>头部大小（字节）</summary>
     public const Int32 HeaderSize = 16;
 
+    /// <summary>最大负载长度（100MB）</summary>
+    public const Int32 MaxPayloadLength = 100 * 1024 * 1024;
+
     /// <summary>序列化为字节数组</summary>
     /// <returns>16 字节的头部数据</returns>
     public Byte[] ToBytes()
@@ -120,7 +123,7 @@ public class ProtocolHeader
         if (magic != Magic)
             throw new InvalidOperationException($"Invalid magic number: 0x{magic:X4}, expected 0x{Magic:X4}");
 
-        return new ProtocolHeader
+        var header = new ProtocolHeader
         {
             Version = buffer[2],
             RequestType = (RequestType)buffer[3],
@@ -128,5 +131,10 @@ public class ProtocolHeader
             PayloadLength = (buffer[8] << 24) | (buffer[9] << 16) | (buffer[10] << 8) | buffer[11],
             Status = (ResponseStatus)buffer[12]
         };
+
+        if (header.PayloadLength < 0 || header.PayloadLength > MaxPayloadLength)
+            throw new InvalidOperationException($"Payload length {header.PayloadLength} exceeds maximum {MaxPayloadLength}");
+
+        return header;
     }
 }

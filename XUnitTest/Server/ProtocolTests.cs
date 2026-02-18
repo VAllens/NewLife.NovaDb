@@ -111,13 +111,25 @@ public class ProtocolTests
         var header = new ProtocolHeader
         {
             SequenceId = UInt32.MaxValue,
-            PayloadLength = Int32.MaxValue
+            PayloadLength = 1024
         };
 
         var bytes = header.ToBytes();
         var parsed = ProtocolHeader.FromBytes(bytes);
 
         Assert.Equal(UInt32.MaxValue, parsed.SequenceId);
-        Assert.Equal(Int32.MaxValue, parsed.PayloadLength);
+        Assert.Equal(1024, parsed.PayloadLength);
+    }
+
+    [Fact(DisplayName = "测试超大负载长度抛出异常")]
+    public void TestExcessivePayloadLengthThrows()
+    {
+        var header = new ProtocolHeader
+        {
+            PayloadLength = Int32.MaxValue
+        };
+
+        var bytes = header.ToBytes();
+        Assert.Throws<InvalidOperationException>(() => ProtocolHeader.FromBytes(bytes));
     }
 }

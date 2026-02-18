@@ -30,6 +30,9 @@ public class NovaDbServer : IDisposable
         }
     }
 
+    /// <summary>最大会话数，默认 10000</summary>
+    public Int32 MaxSessions { get; set; } = 10000;
+
     /// <summary>创建服务器实例</summary>
     /// <param name="port">监听端口，默认 3306</param>
     public NovaDbServer(Int32 port = 3306)
@@ -66,6 +69,9 @@ public class NovaDbServer : IDisposable
 
         lock (_lock)
         {
+            if (_sessions.Count >= MaxSessions)
+                throw new NovaDbException(ErrorCode.ConnectionFailed, $"Maximum sessions ({MaxSessions}) exceeded");
+
             _sessions[session.SessionId] = session;
         }
 
@@ -134,17 +140,29 @@ public class NovaDbServer : IDisposable
             case RequestType.Execute:
             case RequestType.Query:
             case RequestType.Fetch:
-                response.Status = ResponseStatus.Error;
-                responsePayload = Encoding.UTF8.GetBytes("Not yet implemented");
-                break;
-
-            case RequestType.Close:
-                responsePayload = [];
-                break;
-
             case RequestType.BeginTx:
             case RequestType.CommitTx:
             case RequestType.RollbackTx:
+                // 验证认证状态
+                if (!session.IsAuthenticated)
+                {
+                    response.Status = ResponseStatus.Error;
+                    responsePayload = Encoding.UTF8.GetBytes("Authentication required");
+                    break;
+                }
+
+                if (header.RequestType is RequestType.Execute or RequestType.Query or RequestType.Fetch)
+                {
+                    response.Status = ResponseStatus.Error;
+                    responsePayload = Encoding.UTF8.GetBytes("Not yet implemented");
+                }
+                else
+                {
+                    responsePayload = [];
+                }
+                break;
+
+            case RequestType.Close:
                 responsePayload = [];
                 break;
 
