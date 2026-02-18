@@ -1,9 +1,9 @@
-namespace NewLife.NovaDb.WAL;
+﻿namespace NewLife.NovaDb.WAL;
 
 /// <summary>
 /// WAL 记录类型
 /// </summary>
-public enum WalRecordType : byte
+public enum WalRecordType : Byte
 {
     /// <summary>
     /// 开始事务
@@ -59,7 +59,7 @@ public class WalRecord
     /// <summary>
     /// 数据（页数据或其他）
     /// </summary>
-    public Byte[] Data { get; set; } = Array.Empty<Byte>();
+    public Byte[] Data { get; set; } = [];
 
     /// <summary>
     /// 时间戳

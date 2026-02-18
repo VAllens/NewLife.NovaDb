@@ -1,4 +1,4 @@
-namespace NewLife.NovaDb.Storage;
+﻿namespace NewLife.NovaDb.Storage;
 
 /// <summary>
 /// 文件头结构（每个 .data/.idx/.wal 文件的开头）
@@ -131,7 +131,7 @@ public class FileHeader
 /// <summary>
 /// 文件类型枚举
 /// </summary>
-public enum FileType : byte
+public enum FileType : Byte
 {
     /// <summary>
     /// 数据文件 (.data)

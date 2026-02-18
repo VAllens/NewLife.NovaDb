@@ -1,4 +1,4 @@
-namespace NewLife.NovaDb.Storage;
+﻿namespace NewLife.NovaDb.Storage;
 
 /// <summary>
 /// 页头结构（每个页的开头）
@@ -113,7 +113,7 @@ public class PageHeader
 /// <summary>
 /// 页类型枚举
 /// </summary>
-public enum PageType : byte
+public enum PageType : Byte
 {
     /// <summary>
     /// 空白页

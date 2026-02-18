@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>net45;net8.0;net10.0</TargetFrameworks>
     <AssemblyName>NovaServer</AssemblyName>
     <AssemblyTitle>新生命Nova数据库</AssemblyTitle>
     <Description>流星数据库</Description>
@@ -18,6 +18,10 @@
     <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NewLife.Stardust" Version="3.7.2026.213-beta0008" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\NewLife.NovaDb\NewLife.NovaDb.csproj" />

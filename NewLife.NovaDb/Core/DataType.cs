@@ -1,9 +1,9 @@
-namespace NewLife.NovaDb.Core;
+﻿namespace NewLife.NovaDb.Core;
 
 /// <summary>
 /// NovaDb 支持的数据类型（严格映射 C# 类型）
 /// </summary>
-public enum DataType : byte
+public enum DataType : Byte
 {
     /// <summary>
     /// 布尔型（1 字节）

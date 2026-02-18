@@ -1,4 +1,4 @@
-namespace NewLife.NovaDb.Storage;
+﻿namespace NewLife.NovaDb.Storage;
 
 /// <summary>
 /// 页缓存（LRU 策略）
@@ -127,7 +127,8 @@ public class PageCache
 
     private class CacheEntry
     {
-        public Byte[] Data { get; set; } = Array.Empty<Byte>();
+        public Byte[] Data { get; set; } = [];
+
         public LinkedListNode<UInt64> LruNode { get; set; } = null!;
     }
 }

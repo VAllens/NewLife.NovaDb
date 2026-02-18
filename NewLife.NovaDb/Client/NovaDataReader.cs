@@ -1,4 +1,5 @@
-using System.Collections;
+﻿using System.Collections;
+using System.Data;
 using System.Data.Common;
 
 namespace NewLife.NovaDb.Client;
@@ -229,4 +230,7 @@ public class NovaDataReader : DbDataReader
     /// <summary>获取枚举器</summary>
     /// <returns>枚举器</returns>
     public override IEnumerator GetEnumerator() => new DbEnumerator(this);
+
+    /// <summary>获取架构表</summary>
+    public override DataTable GetSchemaTable() => throw new NotImplementedException();
 }

@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Data;
 using System.Data.Common;
 
@@ -31,6 +31,9 @@ public class NovaParameter : DbParameter
     /// <summary>参数值</summary>
     public override Object? Value { get; set; }
 
+    /// <summary>数据版本</summary>
+    public override DataRowVersion SourceVersion { get; set; }
+
     /// <summary>重置数据类型</summary>
     public override void ResetDbType() => DbType = DbType.String;
 }
@@ -45,6 +48,15 @@ public class NovaParameterCollection : DbParameterCollection
 
     /// <summary>同步根对象</summary>
     public override Object SyncRoot { get; } = new Object();
+
+    /// <summary>是否固定大小</summary>
+    public override Boolean IsFixedSize => false;
+
+    /// <summary>是否只读</summary>
+    public override Boolean IsReadOnly => false;
+
+    /// <summary>是否同步访问</summary>
+    public override Boolean IsSynchronized => false;
 
     /// <summary>添加参数</summary>
     /// <param name="value">参数对象</param>

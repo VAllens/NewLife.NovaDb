@@ -1,4 +1,4 @@
-namespace NewLife.NovaDb.Engine.Flux;
+﻿namespace NewLife.NovaDb.Engine.Flux;
 
 /// <summary>消息 ID，格式为 "timestamp-sequence"</summary>
 public class MessageId : IComparable<MessageId>, IEquatable<MessageId>
@@ -51,9 +51,15 @@ public class MessageId : IComparable<MessageId>, IEquatable<MessageId>
         if (dashIndex < 0)
             throw new FormatException($"Invalid MessageId format: '{value}'");
 
+#if NETSTANDARD2_1_OR_GREATER
         var timestamp = Int64.Parse(value.AsSpan(0, dashIndex));
         var sequence = Int32.Parse(value.AsSpan(dashIndex + 1));
         return new MessageId(timestamp, sequence);
+#else
+        var timestamp = value[..dashIndex].ToLong();
+        var sequence = value[(dashIndex + 1)..].ToInt();
+        return new MessageId(timestamp, sequence);
+#endif
     }
 
     /// <summary>比较两个消息 ID</summary>
@@ -85,5 +91,18 @@ public class MessageId : IComparable<MessageId>, IEquatable<MessageId>
 
     /// <summary>获取哈希码</summary>
     /// <returns>哈希码</returns>
-    public override Int32 GetHashCode() => HashCode.Combine(Timestamp, Sequence);
+    public override Int32 GetHashCode()
+    {
+#if NETSTANDARD2_1_OR_GREATER
+        return HashCode.Combine(Timestamp, Sequence);
+#else
+        unchecked
+        {
+            var hash = 17;
+            hash = hash * 23 + Timestamp.GetHashCode();
+            hash = hash * 23 + Sequence.GetHashCode();
+            return hash;
+        }
+#endif
+    }
 }

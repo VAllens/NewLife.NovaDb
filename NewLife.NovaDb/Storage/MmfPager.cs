@@ -1,4 +1,4 @@
-using System.IO.MemoryMappedFiles;
+﻿using System.IO.MemoryMappedFiles;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Storage;
@@ -86,8 +86,13 @@ public class MmfPager : IDisposable
             // 创建内存映射文件
             if (_fileStream.Length > 0)
             {
+#if NET45
+                _mmf = MemoryMappedFile.CreateFromFile(_fileStream, null, 0,
+                    MemoryMappedFileAccess.ReadWrite, null, HandleInheritability.None, false);
+#else
                 _mmf = MemoryMappedFile.CreateFromFile(_fileStream, null, 0,
                     MemoryMappedFileAccess.ReadWrite, HandleInheritability.None, false);
+#endif
             }
         }
     }
