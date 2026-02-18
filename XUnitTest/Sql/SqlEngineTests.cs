@@ -496,4 +496,152 @@ public class SqlEngineTests : IDisposable
     }
 
     #endregion
+
+    #region 系统表查询
+
+    [Fact(DisplayName = "测试 _sys.tables 系统表")]
+    public void TestSysTables()
+    {
+        _engine.Execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR, age INT)");
+        _engine.Execute("CREATE TABLE orders (id INT PRIMARY KEY, amount DOUBLE)");
+        _engine.Execute("INSERT INTO users VALUES (1, 'Alice', 30)");
+
+        var result = _engine.Execute("SELECT * FROM _sys.tables");
+
+        Assert.True(result.IsQuery);
+        Assert.Equal(2, result.Rows.Count);
+        Assert.Equal(4, result.ColumnNames!.Length);
+        Assert.Equal("name", result.ColumnNames[0]);
+        Assert.Equal("column_count", result.ColumnNames[1]);
+        Assert.Equal("primary_key", result.ColumnNames[2]);
+        Assert.Equal("row_count", result.ColumnNames[3]);
+    }
+
+    [Fact(DisplayName = "测试 _sys.tables WHERE 过滤")]
+    public void TestSysTablesWithWhere()
+    {
+        _engine.Execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR)");
+        _engine.Execute("CREATE TABLE orders (id INT PRIMARY KEY, amount DOUBLE)");
+
+        var result = _engine.Execute("SELECT * FROM _sys.tables WHERE name = 'users'");
+
+        Assert.Equal(1, result.Rows.Count);
+        Assert.Equal("users", result.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "测试 _sys.columns 系统表")]
+    public void TestSysColumns()
+    {
+        _engine.Execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR NOT NULL, age INT)");
+
+        var result = _engine.Execute("SELECT * FROM _sys.columns");
+
+        Assert.True(result.IsQuery);
+        Assert.Equal(3, result.Rows.Count);
+        Assert.Equal(6, result.ColumnNames!.Length);
+        Assert.Equal("table_name", result.ColumnNames[0]);
+        Assert.Equal("column_name", result.ColumnNames[1]);
+        Assert.Equal("data_type", result.ColumnNames[2]);
+    }
+
+    [Fact(DisplayName = "测试 _sys.columns WHERE 过滤表名")]
+    public void TestSysColumnsFilterByTable()
+    {
+        _engine.Execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR)");
+        _engine.Execute("CREATE TABLE orders (id INT PRIMARY KEY, amount DOUBLE)");
+
+        var result = _engine.Execute("SELECT * FROM _sys.columns WHERE table_name = 'users'");
+
+        Assert.Equal(2, result.Rows.Count);
+    }
+
+    [Fact(DisplayName = "测试 _sys.indexes 系统表")]
+    public void TestSysIndexes()
+    {
+        _engine.Execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR)");
+
+        var result = _engine.Execute("SELECT * FROM _sys.indexes");
+
+        Assert.True(result.IsQuery);
+        Assert.True(result.Rows.Count >= 1);
+        Assert.Equal(4, result.ColumnNames!.Length);
+        Assert.Equal("table_name", result.ColumnNames[0]);
+        Assert.Equal("index_name", result.ColumnNames[1]);
+    }
+
+    [Fact(DisplayName = "测试 _sys.metrics 系统表")]
+    public void TestSysMetrics()
+    {
+        _engine.Execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR)");
+        _engine.Execute("INSERT INTO users VALUES (1, 'Alice')");
+        _engine.Execute("SELECT * FROM users");
+
+        var result = _engine.Execute("SELECT * FROM _sys.metrics");
+
+        Assert.True(result.IsQuery);
+        Assert.True(result.Rows.Count > 0);
+        Assert.Equal(2, result.ColumnNames!.Length);
+        Assert.Equal("metric", result.ColumnNames[0]);
+        Assert.Equal("value", result.ColumnNames[1]);
+    }
+
+    [Fact(DisplayName = "测试 _sys.metrics WHERE 过滤")]
+    public void TestSysMetricsFilter()
+    {
+        _engine.Execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR)");
+        _engine.Execute("INSERT INTO users VALUES (1, 'Alice')");
+
+        var result = _engine.Execute("SELECT * FROM _sys.metrics WHERE metric = 'insert_count'");
+
+        Assert.Equal(1, result.Rows.Count);
+        Assert.Equal("insert_count", result.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "测试 _sys.version 系统表")]
+    public void TestSysVersion()
+    {
+        var result = _engine.Execute("SELECT * FROM _sys.version");
+
+        Assert.True(result.IsQuery);
+        Assert.Equal(1, result.Rows.Count);
+        Assert.Equal(3, result.ColumnNames!.Length);
+        Assert.Equal("version", result.ColumnNames[0]);
+        Assert.Equal("platform", result.ColumnNames[1]);
+        Assert.Equal("start_time", result.ColumnNames[2]);
+    }
+
+    [Fact(DisplayName = "测试 _sys.tables 带 LIMIT")]
+    public void TestSysTablesWithLimit()
+    {
+        _engine.Execute("CREATE TABLE t1 (id INT PRIMARY KEY)");
+        _engine.Execute("CREATE TABLE t2 (id INT PRIMARY KEY)");
+        _engine.Execute("CREATE TABLE t3 (id INT PRIMARY KEY)");
+
+        var result = _engine.Execute("SELECT * FROM _sys.tables LIMIT 2");
+
+        Assert.Equal(2, result.Rows.Count);
+    }
+
+    [Fact(DisplayName = "测试 _sys.tables 列投影")]
+    public void TestSysTablesProjection()
+    {
+        _engine.Execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR)");
+
+        var result = _engine.Execute("SELECT name, column_count FROM _sys.tables");
+
+        Assert.Equal(2, result.ColumnNames!.Length);
+        Assert.Equal("name", result.ColumnNames[0]);
+        Assert.Equal("column_count", result.ColumnNames[1]);
+    }
+
+    [Fact(DisplayName = "测试不存在的系统表")]
+    public void TestSysTableNotFound()
+    {
+        var ex = Assert.Throws<NovaException>(() =>
+            _engine.Execute("SELECT * FROM _sys.nonexistent"));
+
+        Assert.Equal(ErrorCode.TableNotFound, ex.Code);
+    }
+
+    #endregion
 }

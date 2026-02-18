@@ -21,6 +21,9 @@ public class SqlEngine : IDisposable
     /// <summary>数据库路径</summary>
     public String DbPath => _dbPath;
 
+    /// <summary>运行时指标</summary>
+    public NovaMetrics Metrics { get; }
+
     /// <summary>获取所有表名</summary>
     public IReadOnlyCollection<String> TableNames
     {
@@ -41,6 +44,7 @@ public class SqlEngine : IDisposable
         _dbPath = dbPath ?? throw new ArgumentNullException(nameof(dbPath));
         _options = options ?? new DbOptions { Path = dbPath };
         _txManager = new TransactionManager();
+        Metrics = new NovaMetrics { StartTime = DateTime.Now };
 
         if (!Directory.Exists(_dbPath))
             Directory.CreateDirectory(_dbPath);
@@ -59,17 +63,23 @@ public class SqlEngine : IDisposable
 
         return stmt switch
         {
-            CreateTableStatement create => ExecuteCreateTable(create),
-            DropTableStatement drop => ExecuteDropTable(drop),
-            CreateIndexStatement createIdx => ExecuteCreateIndex(createIdx),
-            DropIndexStatement dropIdx => ExecuteDropIndex(dropIdx),
-            InsertStatement insert => ExecuteInsert(insert, parameters),
-            UpdateStatement update => ExecuteUpdate(update, parameters),
-            DeleteStatement delete => ExecuteDelete(delete, parameters),
-            SelectStatement select => ExecuteSelect(select, parameters),
+            CreateTableStatement create => TrackDdl(ExecuteCreateTable(create)),
+            DropTableStatement drop => TrackDdl(ExecuteDropTable(drop)),
+            CreateIndexStatement createIdx => TrackDdl(ExecuteCreateIndex(createIdx)),
+            DropIndexStatement dropIdx => TrackDdl(ExecuteDropIndex(dropIdx)),
+            InsertStatement insert => TrackInsert(ExecuteInsert(insert, parameters)),
+            UpdateStatement update => TrackUpdate(ExecuteUpdate(update, parameters)),
+            DeleteStatement delete => TrackDelete(ExecuteDelete(delete, parameters)),
+            SelectStatement select => TrackQuery(ExecuteSelect(select, parameters)),
             _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported statement type: {stmt.StatementType}")
         };
     }
+
+    private SqlResult TrackDdl(SqlResult result) { Metrics.ExecuteCount++; Metrics.DdlCount++; return result; }
+    private SqlResult TrackQuery(SqlResult result) { Metrics.ExecuteCount++; Metrics.QueryCount++; return result; }
+    private SqlResult TrackInsert(SqlResult result) { Metrics.ExecuteCount++; Metrics.InsertCount++; return result; }
+    private SqlResult TrackUpdate(SqlResult result) { Metrics.ExecuteCount++; Metrics.UpdateCount++; return result; }
+    private SqlResult TrackDelete(SqlResult result) { Metrics.ExecuteCount++; Metrics.DeleteCount++; return result; }
 
     #region DDL 执行
 
@@ -283,6 +293,12 @@ public class SqlEngine : IDisposable
             return ExecuteSelectNoTable(stmt, parameters);
         }
 
+        // 系统表查询
+        if (stmt.TableName.StartsWith("_sys.", StringComparison.OrdinalIgnoreCase))
+        {
+            return ExecuteSystemTableQuery(stmt, parameters);
+        }
+
         // JOIN 查询
         if (stmt.HasJoin)
         {
@@ -334,6 +350,198 @@ public class SqlEngine : IDisposable
         // 7. 投影
         return BuildSelectResult(stmt, rows, schema, parameters);
     }
+
+    #region 系统表查询
+
+    /// <summary>系统表前缀</summary>
+    private const String SystemTablePrefix = "_sys.";
+
+    private SqlResult ExecuteSystemTableQuery(SelectStatement stmt, Dictionary<String, Object?>? parameters)
+    {
+        var sysTableName = stmt.TableName!.Substring(SystemTablePrefix.Length).ToLower();
+
+        // 构建虚拟 Schema 和行数据
+        var (schema, rows) = sysTableName switch
+        {
+            "tables" => BuildSysTablesData(),
+            "columns" => BuildSysColumnsData(),
+            "indexes" => BuildSysIndexesData(),
+            "metrics" => BuildSysMetricsData(),
+            "version" => BuildSysVersionData(),
+            _ => throw new NovaException(ErrorCode.TableNotFound, $"System table '{stmt.TableName}' not found")
+        };
+
+        // WHERE 过滤
+        if (stmt.Where != null)
+        {
+            rows = rows.Where(row => EvaluateCondition(stmt.Where, row, schema, parameters)).ToList();
+        }
+
+        // ORDER BY
+        if (stmt.OrderBy != null)
+        {
+            rows = ApplyOrderBy(rows, stmt.OrderBy, schema);
+        }
+
+        // OFFSET / LIMIT
+        if (stmt.OffsetValue.HasValue)
+        {
+            rows = rows.Skip(stmt.OffsetValue.Value).ToList();
+        }
+        if (stmt.Limit.HasValue)
+        {
+            rows = rows.Take(stmt.Limit.Value).ToList();
+        }
+
+        // 投影
+        return BuildSelectResult(stmt, rows, schema, parameters);
+    }
+
+    private (TableSchema Schema, List<Object?[]> Rows) BuildSysTablesData()
+    {
+        var schema = new TableSchema("_sys.tables");
+        schema.AddColumn(new ColumnDefinition("name", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("column_count", DataType.Int32, false));
+        schema.AddColumn(new ColumnDefinition("primary_key", DataType.String, true));
+        schema.AddColumn(new ColumnDefinition("row_count", DataType.Int32, false));
+
+        var rows = new List<Object?[]>();
+        lock (_lock)
+        {
+            foreach (var kvp in _schemas)
+            {
+                var tableName = kvp.Key;
+                var tableSchema = kvp.Value;
+                var pkCol = tableSchema.GetPrimaryKeyColumn();
+
+                var rowCount = 0;
+                if (_tables.TryGetValue(tableName, out var table))
+                {
+                    using var tx = _txManager.BeginTransaction();
+                    rowCount = table.GetAll(tx).Count;
+                    tx.Commit();
+                }
+
+                rows.Add(new Object?[] { tableName, tableSchema.Columns.Count, pkCol?.Name, rowCount });
+            }
+        }
+
+        return (schema, rows);
+    }
+
+    private (TableSchema Schema, List<Object?[]> Rows) BuildSysColumnsData()
+    {
+        var schema = new TableSchema("_sys.columns");
+        schema.AddColumn(new ColumnDefinition("table_name", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("column_name", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("data_type", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("is_nullable", DataType.Boolean, false));
+        schema.AddColumn(new ColumnDefinition("is_primary_key", DataType.Boolean, false));
+        schema.AddColumn(new ColumnDefinition("ordinal_position", DataType.Int32, false));
+
+        var rows = new List<Object?[]>();
+        lock (_lock)
+        {
+            foreach (var kvp in _schemas)
+            {
+                var tableName = kvp.Key;
+                var tableSchema = kvp.Value;
+
+                foreach (var col in tableSchema.Columns)
+                {
+                    rows.Add(new Object?[]
+                    {
+                        tableName, col.Name, col.DataType.ToString(), col.Nullable, col.IsPrimaryKey, col.Ordinal
+                    });
+                }
+            }
+        }
+
+        return (schema, rows);
+    }
+
+    private (TableSchema Schema, List<Object?[]> Rows) BuildSysIndexesData()
+    {
+        var schema = new TableSchema("_sys.indexes");
+        schema.AddColumn(new ColumnDefinition("table_name", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("index_name", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("is_unique", DataType.Boolean, false));
+        schema.AddColumn(new ColumnDefinition("columns", DataType.String, false));
+
+        var rows = new List<Object?[]>();
+        lock (_lock)
+        {
+            foreach (var kvp in _schemas)
+            {
+                var tableName = kvp.Key;
+                var tableSchema = kvp.Value;
+                var pkCol = tableSchema.GetPrimaryKeyColumn();
+
+                // 主键索引始终存在
+                if (pkCol != null)
+                {
+                    rows.Add(new Object?[]
+                    {
+                        tableName, $"pk_{tableName}", true, pkCol.Name
+                    });
+                }
+            }
+        }
+
+        return (schema, rows);
+    }
+
+    private (TableSchema Schema, List<Object?[]> Rows) BuildSysMetricsData()
+    {
+        var schema = new TableSchema("_sys.metrics");
+        schema.AddColumn(new ColumnDefinition("metric", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("value", DataType.String, false));
+
+        // 更新表计数
+        lock (_lock)
+        {
+            Metrics.TableCount = _schemas.Count;
+        }
+
+        var rows = new List<Object?[]>
+        {
+            new Object?[] { "table_count", Metrics.TableCount.ToString() },
+            new Object?[] { "total_rows", Metrics.TotalRows.ToString() },
+            new Object?[] { "execute_count", Metrics.ExecuteCount.ToString() },
+            new Object?[] { "query_count", Metrics.QueryCount.ToString() },
+            new Object?[] { "insert_count", Metrics.InsertCount.ToString() },
+            new Object?[] { "update_count", Metrics.UpdateCount.ToString() },
+            new Object?[] { "delete_count", Metrics.DeleteCount.ToString() },
+            new Object?[] { "ddl_count", Metrics.DdlCount.ToString() },
+            new Object?[] { "commit_count", Metrics.CommitCount.ToString() },
+            new Object?[] { "rollback_count", Metrics.RollbackCount.ToString() },
+            new Object?[] { "start_time", Metrics.StartTime.ToString("o") },
+            new Object?[] { "uptime_seconds", Metrics.Uptime.TotalSeconds.ToString("F0") }
+        };
+
+        return (schema, rows);
+    }
+
+    private (TableSchema Schema, List<Object?[]> Rows) BuildSysVersionData()
+    {
+        var schema = new TableSchema("_sys.version");
+        schema.AddColumn(new ColumnDefinition("version", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("platform", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("start_time", DataType.String, false));
+
+        var version = NovaDbTool.GetVersion();
+        var platform = Environment.Version.ToString();
+        var startTime = Metrics.StartTime.ToString("o");
+
+        var rows = new List<Object?[]>
+        {
+            new Object?[] { version, platform, startTime }
+        };
+
+        return (schema, rows);
+    }
+
+    #endregion
 
     private SqlResult ExecuteSelectNoTable(SelectStatement stmt, Dictionary<String, Object?>? parameters)
     {

@@ -352,6 +352,13 @@ public class SqlParser
             Advance();
             stmt.TableName = ExpectIdentifier();
 
+            // 支持点号分隔的表名（如 _sys.tables）
+            while (Peek().Type == SqlTokenType.Dot)
+            {
+                Advance();
+                stmt.TableName += "." + ExpectIdentifier();
+            }
+
             // 可选表别名
             if (Peek().Type == SqlTokenType.As)
             {
