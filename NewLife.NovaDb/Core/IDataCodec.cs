@@ -26,6 +26,12 @@ public interface IDataCodec
 /// <summary>默认数据编解码器实现</summary>
 public class DefaultDataCodec : IDataCodec
 {
+    /// <summary>NULL 标记字节</summary>
+    private const Byte NullFlag = 0x00;
+
+    /// <summary>非 NULL 标记字节</summary>
+    private const Byte NotNullFlag = 0x01;
+
     /// <summary>编码值到二进制</summary>
     /// <param name="value">要编码的值</param>
     /// <param name="dataType">数据类型</param>
@@ -33,7 +39,7 @@ public class DefaultDataCodec : IDataCodec
     public Byte[] Encode(Object? value, DataType dataType)
     {
         if (value == null)
-            return BitConverter.GetBytes(-1);
+            return [NullFlag];
 
         try
         {
@@ -47,6 +53,8 @@ public class DefaultDataCodec : IDataCodec
                 DataType.String => EncodeString((String)value),
                 DataType.Binary => EncodeByteArray((Byte[])value),
                 DataType.DateTime => BitConverter.GetBytes(((DateTime)value).Ticks),
+                DataType.GeoPoint => EncodeGeoPoint((GeoPoint)value),
+                DataType.Vector => EncodeVector((Single[])value),
                 _ => throw new NotSupportedException($"Unsupported data type: {dataType}")
             };
         }
@@ -74,16 +82,9 @@ public class DefaultDataCodec : IDataCodec
         if (offset >= buffer.Length)
             throw new ArgumentOutOfRangeException(nameof(offset), "Offset exceeds buffer length");
 
-        // 检查 NULL 标记（String/Binary 类型使用 -1 长度表示 NULL）
-        if (dataType is DataType.String or DataType.Binary)
-        {
-            if (buffer.Length < offset + 4)
-                throw new ArgumentException("Buffer too short to read length prefix");
-
-            var length = BitConverter.ToInt32(buffer, offset);
-            if (length == -1)
-                return null;
-        }
+        // 检查 NULL 标记（单字节 0x00 表示 NULL）
+        if (buffer[offset] == NullFlag && buffer.Length - offset == 1)
+            return null;
 
         try
         {
@@ -97,6 +98,8 @@ public class DefaultDataCodec : IDataCodec
                 DataType.String => DecodeString(buffer, offset),
                 DataType.Binary => DecodeByteArray(buffer, offset),
                 DataType.DateTime => DecodeDateTime(buffer, offset),
+                DataType.GeoPoint => DecodeGeoPoint(buffer, offset),
+                DataType.Vector => DecodeVector(buffer, offset),
                 _ => throw new NotSupportedException($"Unsupported data type: {dataType}")
             };
         }
@@ -122,7 +125,7 @@ public class DefaultDataCodec : IDataCodec
     {
         if (value == null)
         {
-            return 4; // -1 标记
+            return 1; // NULL 标记单字节
         }
 
         return dataType switch
@@ -135,6 +138,8 @@ public class DefaultDataCodec : IDataCodec
             DataType.String => 4 + System.Text.Encoding.UTF8.GetByteCount((String)value), // 长度前缀 + UTF-8
             DataType.Binary => 4 + ((Byte[])value).Length, // 长度前缀 + 数据
             DataType.DateTime => 8, // Ticks
+            DataType.GeoPoint => 16, // 2 × Double
+            DataType.Vector => 4 + ((Single[])value).Length * 4, // 长度前缀 + Single[]
             _ => throw new NotSupportedException($"Unsupported data type: {dataType}")
         };
     }
@@ -212,6 +217,45 @@ public class DefaultDataCodec : IDataCodec
         Buffer.BlockCopy(BitConverter.GetBytes(value.Length), 0, buffer, 0, 4);
         Buffer.BlockCopy(value, 0, buffer, 4, value.Length);
         return buffer;
+    }
+
+    private Byte[] EncodeGeoPoint(GeoPoint value)
+    {
+        var buffer = new Byte[16];
+        Buffer.BlockCopy(BitConverter.GetBytes(value.Latitude), 0, buffer, 0, 8);
+        Buffer.BlockCopy(BitConverter.GetBytes(value.Longitude), 0, buffer, 8, 8);
+        return buffer;
+    }
+
+    private GeoPoint DecodeGeoPoint(Byte[] buffer, Int32 offset)
+    {
+        if (buffer.Length < offset + 16)
+            throw new ArgumentException($"Buffer too short to read GeoPoint (need {offset + 16} bytes, got {buffer.Length})");
+        var lat = BitConverter.ToDouble(buffer, offset);
+        var lon = BitConverter.ToDouble(buffer, offset + 8);
+        return new GeoPoint(lat, lon);
+    }
+
+    private Byte[] EncodeVector(Single[] value)
+    {
+        var buffer = new Byte[4 + value.Length * 4];
+        Buffer.BlockCopy(BitConverter.GetBytes(value.Length), 0, buffer, 0, 4);
+        Buffer.BlockCopy(value, 0, buffer, 4, value.Length * 4);
+        return buffer;
+    }
+
+    private Single[] DecodeVector(Byte[] buffer, Int32 offset)
+    {
+        if (buffer.Length < offset + 4)
+            throw new ArgumentException($"Buffer too short to read Vector length (need {offset + 4} bytes, got {buffer.Length})");
+        var length = BitConverter.ToInt32(buffer, offset);
+        if (length < 0)
+            throw new ArgumentException($"Invalid vector length: {length}");
+        if (buffer.Length < offset + 4 + length * 4)
+            throw new ArgumentException($"Buffer too short to read Vector (need {offset + 4 + length * 4} bytes, got {buffer.Length})");
+        var result = new Single[length];
+        Buffer.BlockCopy(buffer, offset + 4, result, 0, length * 4);
+        return result;
     }
 
     private Byte[] DecodeByteArray(Byte[] buffer, Int32 offset)
