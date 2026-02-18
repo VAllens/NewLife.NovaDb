@@ -68,6 +68,11 @@ public enum ErrorCode
     Deadlock = 3001,
 
     /// <summary>
+    /// 事务错误
+    /// </summary>
+    TransactionError = 3002,
+
+    /// <summary>
     /// 表已存在
     /// </summary>
     TableExists = 4000,
