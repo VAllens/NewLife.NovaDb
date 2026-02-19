@@ -1,10 +1,11 @@
-using NewLife.Remoting;
+﻿using NewLife.Remoting;
 
 namespace NewLife.NovaDb.Client;
 
 /// <summary>NovaDb 远程客户端，基于 Remoting 的 ApiClient 实现 RPC 通信</summary>
 public class NovaClient : DisposeBase
 {
+    #region 属性
     private ApiClient? _client;
 
     /// <summary>服务器地址，格式如 tcp://127.0.0.1:3306</summary>
@@ -15,7 +16,9 @@ public class NovaClient : DisposeBase
 
     /// <summary>内部 ApiClient 实例</summary>
     public ApiClient? Client => _client;
+    #endregion
 
+    #region 构造
     /// <summary>创建客户端实例</summary>
     /// <param name="serverUri">服务器地址，如 tcp://127.0.0.1:3306</param>
     public NovaClient(String serverUri)
@@ -23,7 +26,9 @@ public class NovaClient : DisposeBase
         if (serverUri == null) throw new ArgumentNullException(nameof(serverUri));
         ServerUri = serverUri;
     }
+    #endregion
 
+    #region 方法
     /// <summary>打开连接</summary>
     public void Open()
     {
@@ -110,7 +115,9 @@ public class NovaClient : DisposeBase
         if (_client == null || !_client.Active)
             throw new InvalidOperationException("Client is not connected. Call Open() first.");
     }
+    #endregion
 
+    #region 释放
     /// <summary>释放资源</summary>
     /// <param name="disposing">是否由 Dispose 调用</param>
     protected override void Dispose(Boolean disposing)
@@ -121,4 +128,5 @@ public class NovaClient : DisposeBase
         _client.TryDispose();
         _client = null;
     }
+    #endregion
 }

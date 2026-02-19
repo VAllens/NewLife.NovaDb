@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using Xunit;
@@ -49,26 +49,25 @@ public class NovaTableTests : IDisposable
     public void TestCreateTable()
     {
         var schema = CreateTestSchema();
-        var tablePath = Path.Combine(_testDir, "users");
         var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
         var txManager = new TransactionManager();
 
-        using var table = new NovaTable(schema, tablePath, options, txManager);
+        using var table = new NovaTable(schema, _testDir, options, txManager);
 
         Assert.NotNull(table);
         Assert.Equal(schema, table.Schema);
-        Assert.True(Directory.Exists(tablePath));
+        // 表文件平铺在数据库目录下，不再创建表子目录
+        Assert.True(File.Exists(Path.Combine(_testDir, "users.data")));
     }
 
     [Fact(DisplayName = "测试插入和查询")]
     public void TestInsertAndGet()
     {
         var schema = CreateTestSchema();
-        var tablePath = Path.Combine(_testDir, "users");
         var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
         var txManager = new TransactionManager();
 
-        using var table = new NovaTable(schema, tablePath, options, txManager);
+        using var table = new NovaTable(schema, _testDir, options, txManager);
         using var tx = txManager.BeginTransaction();
 
         // 插入一行
@@ -89,11 +88,10 @@ public class NovaTableTests : IDisposable
     public void TestPrimaryKeyConflict()
     {
         var schema = CreateTestSchema();
-        var tablePath = Path.Combine(_testDir, "users");
         var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
         var txManager = new TransactionManager();
 
-        using var table = new NovaTable(schema, tablePath, options, txManager);
+        using var table = new NovaTable(schema, _testDir, options, txManager);
         using var tx = txManager.BeginTransaction();
 
         var row1 = new Object?[] { 1, "Alice", 25 };
@@ -111,11 +109,10 @@ public class NovaTableTests : IDisposable
     public void TestUpdate()
     {
         var schema = CreateTestSchema();
-        var tablePath = Path.Combine(_testDir, "users");
         var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
         var txManager = new TransactionManager();
 
-        using var table = new NovaTable(schema, tablePath, options, txManager);
+        using var table = new NovaTable(schema, _testDir, options, txManager);
         using var tx = txManager.BeginTransaction();
 
         // 插入
@@ -140,11 +137,10 @@ public class NovaTableTests : IDisposable
     public void TestDelete()
     {
         var schema = CreateTestSchema();
-        var tablePath = Path.Combine(_testDir, "users");
         var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
         var txManager = new TransactionManager();
 
-        using var table = new NovaTable(schema, tablePath, options, txManager);
+        using var table = new NovaTable(schema, _testDir, options, txManager);
         using var tx = txManager.BeginTransaction();
 
         // 插入
@@ -166,11 +162,10 @@ public class NovaTableTests : IDisposable
     public void TestTransactionIsolation()
     {
         var schema = CreateTestSchema();
-        var tablePath = Path.Combine(_testDir, "users");
         var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
         var txManager = new TransactionManager();
 
-        using var table = new NovaTable(schema, tablePath, options, txManager);
+        using var table = new NovaTable(schema, _testDir, options, txManager);
 
         // 事务 1 插入数据但不提交
         using var tx1 = txManager.BeginTransaction();
@@ -197,11 +192,10 @@ public class NovaTableTests : IDisposable
     public void TestTransactionRollback()
     {
         var schema = CreateTestSchema();
-        var tablePath = Path.Combine(_testDir, "users");
         var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
         var txManager = new TransactionManager();
 
-        using var table = new NovaTable(schema, tablePath, options, txManager);
+        using var table = new NovaTable(schema, _testDir, options, txManager);
 
         // 事务 1 插入数据后回滚
         using (var tx1 = txManager.BeginTransaction())
@@ -221,11 +215,10 @@ public class NovaTableTests : IDisposable
     public void TestGetAll()
     {
         var schema = CreateTestSchema();
-        var tablePath = Path.Combine(_testDir, "users");
         var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
         var txManager = new TransactionManager();
 
-        using var table = new NovaTable(schema, tablePath, options, txManager);
+        using var table = new NovaTable(schema, _testDir, options, txManager);
         using var tx = txManager.BeginTransaction();
 
         // 插入多行
@@ -244,11 +237,10 @@ public class NovaTableTests : IDisposable
     public void TestNullPrimaryKey()
     {
         var schema = CreateTestSchema();
-        var tablePath = Path.Combine(_testDir, "users");
         var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
         var txManager = new TransactionManager();
 
-        using var table = new NovaTable(schema, tablePath, options, txManager);
+        using var table = new NovaTable(schema, _testDir, options, txManager);
         using var tx = txManager.BeginTransaction();
 
         var row = new Object?[] { null, "Alice", 25 };
@@ -260,11 +252,10 @@ public class NovaTableTests : IDisposable
     public void TestWalMode()
     {
         var schema = CreateTestSchema();
-        var tablePath = Path.Combine(_testDir, "users_wal");
         var options = new DbOptions { Path = _testDir, WalMode = WalMode.Full };
         var txManager = new TransactionManager();
 
-        using var table = new NovaTable(schema, tablePath, options, txManager);
+        using var table = new NovaTable(schema, _testDir, options, txManager);
         using var tx = txManager.BeginTransaction();
 
         var row = new Object?[] { 1, "Alice", 25 };
@@ -272,8 +263,8 @@ public class NovaTableTests : IDisposable
 
         tx.Commit();
 
-        // 验证 WAL 文件存在
-        var walPath = Path.Combine(tablePath, "0.wal");
+        // 验证 WAL 文件存在（平铺在数据库目录下）
+        var walPath = Path.Combine(_testDir, "users.wal");
         Assert.True(File.Exists(walPath));
     }
 }

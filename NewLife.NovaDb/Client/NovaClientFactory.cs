@@ -6,16 +6,6 @@ namespace NewLife.NovaDb.Client;
 /// <summary>NovaDb ADO.NET 客户端工厂</summary>
 public sealed class NovaClientFactory : DbProviderFactory
 {
-    /// <summary>默认实例</summary>
-    public static NovaClientFactory Instance = new();
-
-    static NovaClientFactory()
-    {
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP
-        DbProviderFactories.RegisterFactory("NewLife.NovaDb.Client", Instance);
-#endif
-    }
-
     #region 属性
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP
     /// <summary>是否支持创建命令构建器。不支持</summary>
@@ -35,6 +25,18 @@ public sealed class NovaClientFactory : DbProviderFactory
 
     /// <summary>性能跟踪器</summary>
     public ITracer? Tracer { get; set; }
+    #endregion
+
+    #region 静态
+    /// <summary>默认实例</summary>
+    public static NovaClientFactory Instance = new();
+
+    static NovaClientFactory()
+    {
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP
+        DbProviderFactories.RegisterFactory("NewLife.NovaDb.Client", Instance);
+#endif
+    }
     #endregion
 
     #region 方法

@@ -1,12 +1,12 @@
 ﻿using System.Data;
 using System.Data.Common;
-using NewLife.NovaDb.Sql;
 
 namespace NewLife.NovaDb.Client;
 
 /// <summary>NovaDb ADO.NET 命令</summary>
 public class NovaCommand : DbCommand
 {
+    #region 属性
     private String _commandText = String.Empty;
     private readonly NovaParameterCollection _parameters = [];
 
@@ -37,6 +37,9 @@ public class NovaCommand : DbCommand
 
     /// <summary>关联事务</summary>
     protected override DbTransaction? DbTransaction { get; set; }
+    #endregion
+
+    #region 方法
 
     /// <summary>取消命令</summary>
     public override void Cancel() { }
@@ -45,8 +48,7 @@ public class NovaCommand : DbCommand
     /// <returns>受影响行数</returns>
     public override Int32 ExecuteNonQuery()
     {
-        var conn = DbConnection as NovaConnection;
-        if (conn == null) return 0;
+        if (DbConnection is not NovaConnection conn) return 0;
 
         // 嵌入模式：直接使用 SQL 引擎
         if (conn.SqlEngine != null)
@@ -66,8 +68,7 @@ public class NovaCommand : DbCommand
     /// <returns>标量值</returns>
     public override Object? ExecuteScalar()
     {
-        var conn = DbConnection as NovaConnection;
-        if (conn == null) return null;
+        if (DbConnection is not NovaConnection conn) return null;
 
         // 嵌入模式：直接使用 SQL 引擎
         if (conn.SqlEngine != null)
@@ -100,8 +101,7 @@ public class NovaCommand : DbCommand
     protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
     {
         var reader = new NovaDataReader();
-        var conn = DbConnection as NovaConnection;
-        if (conn == null) return reader;
+        if (DbConnection is not NovaConnection conn) return reader;
 
         // 嵌入模式：直接使用 SQL 引擎
         if (conn.SqlEngine != null)
@@ -131,6 +131,8 @@ public class NovaCommand : DbCommand
 
         return reader;
     }
+
+    #endregion
 
     #region 辅助
 

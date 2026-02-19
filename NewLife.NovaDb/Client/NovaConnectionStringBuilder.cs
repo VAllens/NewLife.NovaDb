@@ -61,7 +61,7 @@ public class NovaConnectionStringBuilder : DbConnectionStringBuilder
     public Boolean IsEmbedded => !String.IsNullOrEmpty(DataSource);
     #endregion
 
-    #region 构造
+    #region 静态
     private static readonly IDictionary<String, String[]> _options;
 
     static NovaConnectionStringBuilder()
@@ -82,7 +82,9 @@ public class NovaConnectionStringBuilder : DbConnectionStringBuilder
 
         _options = dic;
     }
+    #endregion
 
+    #region 构造
     /// <summary>实例化</summary>
     public NovaConnectionStringBuilder()
     {

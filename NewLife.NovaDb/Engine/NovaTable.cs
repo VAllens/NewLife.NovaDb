@@ -9,12 +9,13 @@ namespace NewLife.NovaDb.Engine;
 public class NovaTable : IDisposable
 {
     private readonly TableSchema _schema;
-    private readonly String _tablePath;
+    private readonly String _dbPath;
     private readonly DbOptions _options;
     private readonly TransactionManager _txManager;
     private readonly WalWriter? _walWriter;
     private readonly MmfPager _dataPager;
     private readonly IDataCodec _codec;
+    private readonly TableFileManager _fileManager;
 
     // 主键索引（内存 SkipList）
     private readonly SkipList<ComparableObject, List<RowVersion>> _primaryIndex;
@@ -24,18 +25,21 @@ public class NovaTable : IDisposable
     /// <summary>表架构</summary>
     public TableSchema Schema => _schema;
 
-    /// <summary>表路径</summary>
-    public String TablePath => _tablePath;
+    /// <summary>数据库目录路径</summary>
+    public String DbPath => _dbPath;
+
+    /// <summary>表文件管理器</summary>
+    public TableFileManager FileManager => _fileManager;
 
     /// <summary>创建 NovaTable 实例</summary>
     /// <param name="schema">表架构</param>
-    /// <param name="tablePath">表目录路径</param>
+    /// <param name="dbPath">数据库目录路径</param>
     /// <param name="options">数据库选项</param>
     /// <param name="txManager">事务管理器</param>
-    public NovaTable(TableSchema schema, String tablePath, DbOptions options, TransactionManager txManager)
+    public NovaTable(TableSchema schema, String dbPath, DbOptions options, TransactionManager txManager)
     {
         _schema = schema ?? throw new ArgumentNullException(nameof(schema));
-        _tablePath = tablePath ?? throw new ArgumentNullException(nameof(tablePath));
+        _dbPath = dbPath ?? throw new ArgumentNullException(nameof(dbPath));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _txManager = txManager ?? throw new ArgumentNullException(nameof(txManager));
         _codec = new DefaultDataCodec();
@@ -43,19 +47,22 @@ public class NovaTable : IDisposable
         if (!_schema.PrimaryKeyIndex.HasValue)
             throw new NovaException(ErrorCode.InvalidArgument, "Table must have a primary key");
 
-        // 创建表目录
-        if (!Directory.Exists(_tablePath))
-            Directory.CreateDirectory(_tablePath);
+        // 确保数据库目录存在
+        if (!Directory.Exists(_dbPath))
+            Directory.CreateDirectory(_dbPath);
+
+        // 使用 TableFileManager 生成文件路径（表文件平铺在数据库目录下）
+        _fileManager = new TableFileManager(_dbPath, schema.TableName, _options);
 
         // 初始化数据文件
-        var dataPath = Path.Combine(_tablePath, "0.data");
+        var dataPath = _fileManager.GetDataFilePath();
         _dataPager = new MmfPager(dataPath, _options.PageSize);
         _dataPager.Open();
 
         // 初始化 WAL
         if (_options.WalMode != WalMode.None)
         {
-            var walPath = Path.Combine(_tablePath, "0.wal");
+            var walPath = _fileManager.GetWalFilePath();
             _walWriter = new WalWriter(walPath, _options.WalMode);
             _walWriter.Open();
         }

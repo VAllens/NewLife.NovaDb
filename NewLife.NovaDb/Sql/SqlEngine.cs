@@ -1,5 +1,6 @@
 ﻿using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
+using NewLife.NovaDb.Storage;
 using NewLife.NovaDb.Tx;
 
 namespace NewLife.NovaDb.Sql;
@@ -7,6 +8,7 @@ namespace NewLife.NovaDb.Sql;
 /// <summary>SQL 执行引擎，连接 SQL 解析器与表引擎</summary>
 public class SqlEngine : IDisposable
 {
+    #region 属性
     private readonly String _dbPath;
     private readonly DbOptions _options;
     private readonly TransactionManager _txManager;
@@ -36,7 +38,9 @@ public class SqlEngine : IDisposable
             }
         }
     }
+    #endregion
 
+    #region 构造
     /// <summary>创建 SQL 执行引擎</summary>
     /// <param name="dbPath">数据库路径</param>
     /// <param name="options">数据库选项</param>
@@ -51,7 +55,9 @@ public class SqlEngine : IDisposable
         if (!_options.ReadOnly && !Directory.Exists(_dbPath))
             Directory.CreateDirectory(_dbPath);
     }
+    #endregion
 
+    #region 方法
     /// <summary>执行 SQL 语句并返回结果</summary>
     /// <param name="sql">SQL 文本</param>
     /// <param name="parameters">参数字典</param>
@@ -107,8 +113,7 @@ public class SqlEngine : IDisposable
                 schema.AddColumn(new ColumnDefinition(colDef.Name, dataType, !colDef.NotNull, colDef.IsPrimaryKey));
             }
 
-            var tablePath = Path.Combine(_dbPath, stmt.TableName);
-            var table = new NovaTable(schema, tablePath, _options, _txManager);
+            var table = new NovaTable(schema, _dbPath, _options, _txManager);
 
             _schemas[stmt.TableName] = schema;
             _tables[stmt.TableName] = table;
@@ -135,18 +140,15 @@ public class SqlEngine : IDisposable
 
             _schemas.Remove(stmt.TableName);
 
-            // 删除表目录
-            var tablePath = Path.Combine(_dbPath, stmt.TableName);
-            if (Directory.Exists(tablePath))
+            // 使用 TableFileManager 删除表的所有文件（平铺在数据库目录下）
+            var fileManager = new TableFileManager(_dbPath, stmt.TableName, _options);
+            try
             {
-                try
-                {
-                    Directory.Delete(tablePath, recursive: true);
-                }
-                catch
-                {
-                    // 忽略文件系统错误
-                }
+                fileManager.DeleteAllFiles();
+            }
+            catch
+            {
+                // 忽略文件系统错误
             }
 
             return new SqlResult { AffectedRows = 0 };
@@ -1436,6 +1438,190 @@ public class SqlEngine : IDisposable
 
     #endregion
 
+    #region JOIN 辅助
+
+    /// <summary>在合并行上对 JOIN 条件求值</summary>
+    private Boolean EvaluateJoinCondition(SqlExpression expr, Object?[] combinedRow,
+        List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns,
+        Dictionary<String, Object?>? parameters)
+    {
+        var result = EvaluateJoinExpression(expr, combinedRow, columns, parameters);
+        return result is Boolean b && b;
+    }
+
+    /// <summary>在合并行上对表达式求值（支持 table.column 前缀解析）</summary>
+    private Object? EvaluateJoinExpression(SqlExpression expr, Object?[] combinedRow,
+        List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns,
+        Dictionary<String, Object?>? parameters)
+    {
+        switch (expr)
+        {
+            case LiteralExpression lit:
+                return lit.Value;
+
+            case ColumnRefExpression colRef:
+                var colIdx = ResolveJoinColumnIndex(colRef, columns);
+                return combinedRow[colIdx];
+
+            case ParameterExpression param:
+                if (parameters == null || !parameters.TryGetValue(param.ParameterName, out var paramValue))
+                    throw new NovaException(ErrorCode.InvalidArgument, $"Parameter '{param.ParameterName}' not found");
+                return paramValue;
+
+            case BinaryExpression binary:
+                // 短路求值
+                if (binary.Operator == BinaryOperator.And)
+                {
+                    var lv = EvaluateJoinExpression(binary.Left, combinedRow, columns, parameters);
+                    if (lv is Boolean lb && !lb) return false;
+                    var rv = EvaluateJoinExpression(binary.Right, combinedRow, columns, parameters);
+                    return Convert.ToBoolean(lv) && Convert.ToBoolean(rv);
+                }
+                if (binary.Operator == BinaryOperator.Or)
+                {
+                    var lv = EvaluateJoinExpression(binary.Left, combinedRow, columns, parameters);
+                    if (lv is Boolean lb && lb) return true;
+                    var rv = EvaluateJoinExpression(binary.Right, combinedRow, columns, parameters);
+                    return Convert.ToBoolean(lv) || Convert.ToBoolean(rv);
+                }
+
+                var left = EvaluateJoinExpression(binary.Left, combinedRow, columns, parameters);
+                var right = EvaluateJoinExpression(binary.Right, combinedRow, columns, parameters);
+
+                return binary.Operator switch
+                {
+                    BinaryOperator.Equal => CompareValues(left, right) == 0,
+                    BinaryOperator.NotEqual => CompareValues(left, right) != 0,
+                    BinaryOperator.LessThan => CompareValues(left, right) < 0,
+                    BinaryOperator.GreaterThan => CompareValues(left, right) > 0,
+                    BinaryOperator.LessOrEqual => CompareValues(left, right) <= 0,
+                    BinaryOperator.GreaterOrEqual => CompareValues(left, right) >= 0,
+                    BinaryOperator.Add => ArithmeticOp(left, right, (a, b) => a + b),
+                    BinaryOperator.Subtract => ArithmeticOp(left, right, (a, b) => a - b),
+                    BinaryOperator.Multiply => ArithmeticOp(left, right, (a, b) => a * b),
+                    BinaryOperator.Divide => ArithmeticOp(left, right, (a, b) => b != 0 ? a / b : throw new DivideByZeroException()),
+                    BinaryOperator.Modulo => ArithmeticOp(left, right, (a, b) => b != 0 ? a % b : throw new DivideByZeroException()),
+                    BinaryOperator.Like => EvaluateLike(left, right),
+                    _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported operator: {binary.Operator}")
+                };
+
+            case UnaryExpression unary:
+                var operand = EvaluateJoinExpression(unary.Operand, combinedRow, columns, parameters);
+                return unary.Operator switch
+                {
+                    "NOT" => !(Convert.ToBoolean(operand)),
+                    "-" => ArithmeticNegate(operand),
+                    _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported unary operator: {unary.Operator}")
+                };
+
+            case IsNullExpression isNull:
+                var val = EvaluateJoinExpression(isNull.Operand, combinedRow, columns, parameters);
+                return isNull.IsNot ? val != null : val == null;
+
+            default:
+                throw new NovaException(ErrorCode.NotSupported, $"Unsupported expression type in JOIN: {expr.ExprType}");
+        }
+    }
+
+    /// <summary>解析 JOIN 中的列引用（支持 table.column 和 无前缀）</summary>
+    private static Int32 ResolveJoinColumnIndex(ColumnRefExpression colRef,
+        List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns)
+    {
+        if (colRef.TablePrefix != null)
+        {
+            for (var i = 0; i < columns.Count; i++)
+            {
+                if (String.Equals(columns[i].Alias, colRef.TablePrefix, StringComparison.OrdinalIgnoreCase) &&
+                    String.Equals(columns[i].Column, colRef.ColumnName, StringComparison.OrdinalIgnoreCase))
+                    return i;
+            }
+            throw new NovaException(ErrorCode.InvalidArgument, $"Column '{colRef.TablePrefix}.{colRef.ColumnName}' not found");
+        }
+
+        // 无表前缀：按列名匹配（如有歧义取第一个）
+        for (var i = 0; i < columns.Count; i++)
+        {
+            if (String.Equals(columns[i].Column, colRef.ColumnName, StringComparison.OrdinalIgnoreCase))
+                return i;
+        }
+        throw new NovaException(ErrorCode.InvalidArgument, $"Column '{colRef.ColumnName}' not found");
+    }
+
+    /// <summary>构建 JOIN 查询的结果投影</summary>
+    private SqlResult BuildJoinSelectResult(SelectStatement stmt, List<Object?[]> rows,
+        List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns,
+        Dictionary<String, Object?>? parameters)
+    {
+        var result = new SqlResult();
+
+        if (stmt.IsSelectAll)
+        {
+            result.ColumnNames = columns.Select(c => c.Column).ToArray();
+            result.Rows = rows;
+        }
+        else
+        {
+            var colNames = new String[stmt.Columns.Count];
+            for (var i = 0; i < stmt.Columns.Count; i++)
+            {
+                var col = stmt.Columns[i];
+                if (col.Alias != null)
+                    colNames[i] = col.Alias;
+                else if (col.Expression is ColumnRefExpression cr)
+                    colNames[i] = cr.ColumnName;
+                else
+                    colNames[i] = $"col{i}";
+            }
+            result.ColumnNames = colNames;
+
+            foreach (var row in rows)
+            {
+                var outputRow = new Object?[stmt.Columns.Count];
+                for (var i = 0; i < stmt.Columns.Count; i++)
+                {
+                    var col = stmt.Columns[i];
+                    outputRow[i] = EvaluateJoinExpression(col.Expression, row, columns, parameters);
+                }
+                result.Rows.Add(outputRow);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>JOIN 结果的 ORDER BY</summary>
+    private static List<Object?[]> ApplyJoinOrderBy(List<Object?[]> rows, List<OrderByClause> orderBy,
+        List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns)
+    {
+        return rows.OrderBy(r => 0, Comparer<Int32>.Default)
+            .ThenBy(r => r, new JoinOrderByComparer(orderBy, columns))
+            .ToList();
+    }
+
+    #endregion
+
+    #region 释放
+    /// <summary>释放资源</summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+
+        lock (_lock)
+        {
+            foreach (var table in _tables.Values)
+            {
+                table.Dispose();
+            }
+            _tables.Clear();
+            _schemas.Clear();
+        }
+
+        _disposed = true;
+    }
+    #endregion
+
+    #endregion
+
     #region 辅助
 
     private NovaTable GetTable(String tableName)
@@ -1673,188 +1859,6 @@ public class SqlEngine : IDisposable
         return false;
     }
 
-    #endregion
-
-    #region JOIN 辅助
-
-    /// <summary>在合并行上对 JOIN 条件求值</summary>
-    private Boolean EvaluateJoinCondition(SqlExpression expr, Object?[] combinedRow,
-        List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns,
-        Dictionary<String, Object?>? parameters)
-    {
-        var result = EvaluateJoinExpression(expr, combinedRow, columns, parameters);
-        return result is Boolean b && b;
-    }
-
-    /// <summary>在合并行上对表达式求值（支持 table.column 前缀解析）</summary>
-    private Object? EvaluateJoinExpression(SqlExpression expr, Object?[] combinedRow,
-        List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns,
-        Dictionary<String, Object?>? parameters)
-    {
-        switch (expr)
-        {
-            case LiteralExpression lit:
-                return lit.Value;
-
-            case ColumnRefExpression colRef:
-                var colIdx = ResolveJoinColumnIndex(colRef, columns);
-                return combinedRow[colIdx];
-
-            case ParameterExpression param:
-                if (parameters == null || !parameters.TryGetValue(param.ParameterName, out var paramValue))
-                    throw new NovaException(ErrorCode.InvalidArgument, $"Parameter '{param.ParameterName}' not found");
-                return paramValue;
-
-            case BinaryExpression binary:
-                // 短路求值
-                if (binary.Operator == BinaryOperator.And)
-                {
-                    var lv = EvaluateJoinExpression(binary.Left, combinedRow, columns, parameters);
-                    if (lv is Boolean lb && !lb) return false;
-                    var rv = EvaluateJoinExpression(binary.Right, combinedRow, columns, parameters);
-                    return Convert.ToBoolean(lv) && Convert.ToBoolean(rv);
-                }
-                if (binary.Operator == BinaryOperator.Or)
-                {
-                    var lv = EvaluateJoinExpression(binary.Left, combinedRow, columns, parameters);
-                    if (lv is Boolean lb && lb) return true;
-                    var rv = EvaluateJoinExpression(binary.Right, combinedRow, columns, parameters);
-                    return Convert.ToBoolean(lv) || Convert.ToBoolean(rv);
-                }
-
-                var left = EvaluateJoinExpression(binary.Left, combinedRow, columns, parameters);
-                var right = EvaluateJoinExpression(binary.Right, combinedRow, columns, parameters);
-
-                return binary.Operator switch
-                {
-                    BinaryOperator.Equal => CompareValues(left, right) == 0,
-                    BinaryOperator.NotEqual => CompareValues(left, right) != 0,
-                    BinaryOperator.LessThan => CompareValues(left, right) < 0,
-                    BinaryOperator.GreaterThan => CompareValues(left, right) > 0,
-                    BinaryOperator.LessOrEqual => CompareValues(left, right) <= 0,
-                    BinaryOperator.GreaterOrEqual => CompareValues(left, right) >= 0,
-                    BinaryOperator.Add => ArithmeticOp(left, right, (a, b) => a + b),
-                    BinaryOperator.Subtract => ArithmeticOp(left, right, (a, b) => a - b),
-                    BinaryOperator.Multiply => ArithmeticOp(left, right, (a, b) => a * b),
-                    BinaryOperator.Divide => ArithmeticOp(left, right, (a, b) => b != 0 ? a / b : throw new DivideByZeroException()),
-                    BinaryOperator.Modulo => ArithmeticOp(left, right, (a, b) => b != 0 ? a % b : throw new DivideByZeroException()),
-                    BinaryOperator.Like => EvaluateLike(left, right),
-                    _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported operator: {binary.Operator}")
-                };
-
-            case UnaryExpression unary:
-                var operand = EvaluateJoinExpression(unary.Operand, combinedRow, columns, parameters);
-                return unary.Operator switch
-                {
-                    "NOT" => !(Convert.ToBoolean(operand)),
-                    "-" => ArithmeticNegate(operand),
-                    _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported unary operator: {unary.Operator}")
-                };
-
-            case IsNullExpression isNull:
-                var val = EvaluateJoinExpression(isNull.Operand, combinedRow, columns, parameters);
-                return isNull.IsNot ? val != null : val == null;
-
-            default:
-                throw new NovaException(ErrorCode.NotSupported, $"Unsupported expression type in JOIN: {expr.ExprType}");
-        }
-    }
-
-    /// <summary>解析 JOIN 中的列引用（支持 table.column 和 无前缀）</summary>
-    private static Int32 ResolveJoinColumnIndex(ColumnRefExpression colRef,
-        List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns)
-    {
-        if (colRef.TablePrefix != null)
-        {
-            for (var i = 0; i < columns.Count; i++)
-            {
-                if (String.Equals(columns[i].Alias, colRef.TablePrefix, StringComparison.OrdinalIgnoreCase) &&
-                    String.Equals(columns[i].Column, colRef.ColumnName, StringComparison.OrdinalIgnoreCase))
-                    return i;
-            }
-            throw new NovaException(ErrorCode.InvalidArgument, $"Column '{colRef.TablePrefix}.{colRef.ColumnName}' not found");
-        }
-
-        // 无表前缀：按列名匹配（如有歧义取第一个）
-        for (var i = 0; i < columns.Count; i++)
-        {
-            if (String.Equals(columns[i].Column, colRef.ColumnName, StringComparison.OrdinalIgnoreCase))
-                return i;
-        }
-        throw new NovaException(ErrorCode.InvalidArgument, $"Column '{colRef.ColumnName}' not found");
-    }
-
-    /// <summary>构建 JOIN 查询的结果投影</summary>
-    private SqlResult BuildJoinSelectResult(SelectStatement stmt, List<Object?[]> rows,
-        List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns,
-        Dictionary<String, Object?>? parameters)
-    {
-        var result = new SqlResult();
-
-        if (stmt.IsSelectAll)
-        {
-            result.ColumnNames = columns.Select(c => c.Column).ToArray();
-            result.Rows = rows;
-        }
-        else
-        {
-            var colNames = new String[stmt.Columns.Count];
-            for (var i = 0; i < stmt.Columns.Count; i++)
-            {
-                var col = stmt.Columns[i];
-                if (col.Alias != null)
-                    colNames[i] = col.Alias;
-                else if (col.Expression is ColumnRefExpression cr)
-                    colNames[i] = cr.ColumnName;
-                else
-                    colNames[i] = $"col{i}";
-            }
-            result.ColumnNames = colNames;
-
-            foreach (var row in rows)
-            {
-                var outputRow = new Object?[stmt.Columns.Count];
-                for (var i = 0; i < stmt.Columns.Count; i++)
-                {
-                    var col = stmt.Columns[i];
-                    outputRow[i] = EvaluateJoinExpression(col.Expression, row, columns, parameters);
-                }
-                result.Rows.Add(outputRow);
-            }
-        }
-
-        return result;
-    }
-
-    /// <summary>JOIN 结果的 ORDER BY</summary>
-    private static List<Object?[]> ApplyJoinOrderBy(List<Object?[]> rows, List<OrderByClause> orderBy,
-        List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns)
-    {
-        return rows.OrderBy(r => 0, Comparer<Int32>.Default)
-            .ThenBy(r => r, new JoinOrderByComparer(orderBy, columns))
-            .ToList();
-    }
-
-    #endregion
-
-    /// <summary>释放资源</summary>
-    public void Dispose()
-    {
-        if (_disposed) return;
-
-        lock (_lock)
-        {
-            foreach (var table in _tables.Values)
-            {
-                table.Dispose();
-            }
-            _tables.Clear();
-            _schemas.Clear();
-        }
-
-        _disposed = true;
-    }
-
     /// <summary>ORDER BY 比较器</summary>
     private class OrderByComparer(List<OrderByClause> orderBy, TableSchema schema) : IComparer<Object?[]>
     {
@@ -1909,6 +1913,8 @@ public class SqlEngine : IDisposable
             return 0;
         }
     }
+
+    #endregion
 }
 
 /// <summary>SQL 执行结果</summary>
