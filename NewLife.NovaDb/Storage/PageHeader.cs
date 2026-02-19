@@ -114,33 +114,21 @@ public class PageHeader
     }
 }
 
-/// <summary>
-/// 页类型枚举
-/// </summary>
+/// <summary>页类型枚举</summary>
 public enum PageType : Byte
 {
-    /// <summary>
-    /// 空白页
-    /// </summary>
+    /// <summary>空白页</summary>
     Empty = 0,
 
-    /// <summary>
-    /// 数据页
-    /// </summary>
+    /// <summary>数据页</summary>
     Data = 1,
 
-    /// <summary>
-    /// 索引页
-    /// </summary>
+    /// <summary>索引页</summary>
     Index = 2,
 
-    /// <summary>
-    /// 目录页（稀疏索引）
-    /// </summary>
+    /// <summary>目录页（稀疏索引）</summary>
     Directory = 3,
 
-    /// <summary>
-    /// 元数据页
-    /// </summary>
+    /// <summary>元数据页</summary>
     Metadata = 4
 }

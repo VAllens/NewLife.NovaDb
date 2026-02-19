@@ -1,45 +1,31 @@
-using System.Linq;
+﻿using System.Linq;
 
 namespace NewLife.NovaDb.Engine;
 
-/// <summary>
-/// 冷段目录项（稀疏索引）
-/// </summary>
+/// <summary>冷段目录项（稀疏索引）</summary>
 public class ColdDirectoryEntry
 {
-    /// <summary>
-    /// 锚点键
-    /// </summary>
+    /// <summary>锚点键</summary>
     public Object? Key { get; set; }
 
-    /// <summary>
-    /// 页 ID
-    /// </summary>
+    /// <summary>页 ID</summary>
     public UInt64 PageId { get; set; }
 
-    /// <summary>
-    /// 页内偏移
-    /// </summary>
+    /// <summary>页内偏移</summary>
     public Int32 Offset { get; set; }
 }
 
-/// <summary>
-/// 冷索引目录（稀疏索引，每 N 行一个锚点）
-/// </summary>
+/// <summary>冷索引目录（稀疏索引，每 N 行一个锚点）</summary>
 public class ColdIndexDirectory
 {
     private readonly Int32 _anchorInterval;
-    private readonly List<ColdDirectoryEntry> _anchors = new();
+    private readonly List<ColdDirectoryEntry> _anchors = [];
     private readonly Object _lock = new();
 
-    /// <summary>
-    /// 锚点间隔（行数），默认 1000 行一个锚点
-    /// </summary>
+    /// <summary>锚点间隔（行数），默认 1000 行一个锚点</summary>
     public Int32 AnchorInterval => _anchorInterval;
 
-    /// <summary>
-    /// 锚点数量
-    /// </summary>
+    /// <summary>锚点数量</summary>
     public Int32 AnchorCount
     {
         get
@@ -51,9 +37,7 @@ public class ColdIndexDirectory
         }
     }
 
-    /// <summary>
-    /// 创建冷索引目录
-    /// </summary>
+    /// <summary>创建冷索引目录</summary>
     /// <param name="anchorInterval">锚点间隔（行数），默认 1000</param>
     public ColdIndexDirectory(Int32 anchorInterval = 1000)
     {
@@ -63,9 +47,7 @@ public class ColdIndexDirectory
         _anchorInterval = anchorInterval;
     }
 
-    /// <summary>
-    /// 添加锚点
-    /// </summary>
+    /// <summary>添加锚点</summary>
     /// <param name="key">锚点键</param>
     /// <param name="pageId">页 ID</param>
     /// <param name="offset">页内偏移</param>
@@ -88,9 +70,7 @@ public class ColdIndexDirectory
         }
     }
 
-    /// <summary>
-    /// 查找键的起始位置（找到小于等于 key 的最大锚点）
-    /// </summary>
+    /// <summary>查找键的起始位置（找到小于等于 key 的最大锚点）</summary>
     /// <param name="key">要查找的键</param>
     /// <returns>目录项，如果未找到则返回 null</returns>
     public ColdDirectoryEntry? FindStartPosition(Object key)
@@ -136,9 +116,7 @@ public class ColdIndexDirectory
         }
     }
 
-    /// <summary>
-    /// 获取范围内的锚点
-    /// </summary>
+    /// <summary>获取范围内的锚点</summary>
     /// <param name="minKey">最小键（包含）</param>
     /// <param name="maxKey">最大键（包含）</param>
     /// <returns>范围内的锚点列表</returns>
@@ -147,7 +125,7 @@ public class ColdIndexDirectory
         lock (_lock)
         {
             if (_anchors.Count == 0)
-                return new List<ColdDirectoryEntry>();
+                return [];
 
             var result = new List<ColdDirectoryEntry>();
 
@@ -172,9 +150,7 @@ public class ColdIndexDirectory
         }
     }
 
-    /// <summary>
-    /// 清空所有锚点
-    /// </summary>
+    /// <summary>清空所有锚点</summary>
     public void Clear()
     {
         lock (_lock)
@@ -183,9 +159,7 @@ public class ColdIndexDirectory
         }
     }
 
-    /// <summary>
-    /// 获取所有锚点
-    /// </summary>
+    /// <summary>获取所有锚点</summary>
     /// <returns>锚点列表</returns>
     public List<ColdDirectoryEntry> GetAllAnchors()
     {
@@ -197,9 +171,7 @@ public class ColdIndexDirectory
 
     #region 辅助
 
-    /// <summary>
-    /// 比较两个键
-    /// </summary>
+    /// <summary>比较两个键</summary>
     private Int32 CompareKeys(Object key1, Object key2)
     {
         if (key1.Equals(key2))

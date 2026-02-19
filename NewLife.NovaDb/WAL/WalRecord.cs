@@ -3,73 +3,47 @@ using NewLife.Data;
 
 namespace NewLife.NovaDb.WAL;
 
-/// <summary>
-/// WAL 记录类型
-/// </summary>
+/// <summary>WAL 记录类型</summary>
 public enum WalRecordType : Byte
 {
-    /// <summary>
-    /// 开始事务
-    /// </summary>
+    /// <summary>开始事务</summary>
     BeginTx = 1,
 
-    /// <summary>
-    /// 更新页
-    /// </summary>
+    /// <summary>更新页</summary>
     UpdatePage = 2,
 
-    /// <summary>
-    /// 提交事务
-    /// </summary>
+    /// <summary>提交事务</summary>
     CommitTx = 3,
 
-    /// <summary>
-    /// 回滚事务
-    /// </summary>
+    /// <summary>回滚事务</summary>
     AbortTx = 4,
 
-    /// <summary>
-    /// 检查点
-    /// </summary>
+    /// <summary>检查点</summary>
     Checkpoint = 5
 }
 
-/// <summary>
-/// WAL 记录
-/// </summary>
+/// <summary>WAL 记录</summary>
 public class WalRecord
 {
     /// <summary>头部固定大小（37 字节）</summary>
     public const Int32 RecordHeaderSize = 37;
 
-    /// <summary>
-    /// 日志序列号（LSN）
-    /// </summary>
+    /// <summary>日志序列号（LSN）</summary>
     public UInt64 Lsn { get; set; }
 
-    /// <summary>
-    /// 事务 ID
-    /// </summary>
+    /// <summary>事务 ID</summary>
     public UInt64 TxId { get; set; }
 
-    /// <summary>
-    /// 记录类型
-    /// </summary>
+    /// <summary>记录类型</summary>
     public WalRecordType RecordType { get; set; }
 
-    /// <summary>
-    /// 页 ID（仅用于 UpdatePage）
-    /// </summary>
+    /// <summary>页 ID（仅用于 UpdatePage）</summary>
     public UInt64 PageId { get; set; }
 
-    /// <summary>
-    /// 数据（页数据或其他）
-    /// </summary>
+    /// <summary>数据（页数据或其他）</summary>
     public Byte[] Data { get; set; } = [];
 
-    /// <summary>
-    /// 时间戳
-    /// </summary>
+    /// <summary>时间戳</summary>
     public Int64 Timestamp { get; set; }
 
     /// <summary>序列化为数据包，使用后需 Dispose 归还到对象池</summary>

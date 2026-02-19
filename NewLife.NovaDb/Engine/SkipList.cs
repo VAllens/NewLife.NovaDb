@@ -1,8 +1,6 @@
-namespace NewLife.NovaDb.Engine;
+﻿namespace NewLife.NovaDb.Engine;
 
-/// <summary>
-/// 跳表节点
-/// </summary>
+/// <summary>跳表节点</summary>
 /// <typeparam name="TKey">键类型</typeparam>
 /// <typeparam name="TValue">值类型</typeparam>
 internal class SkipListNode<TKey, TValue> where TKey : IComparable<TKey>
@@ -19,9 +17,7 @@ internal class SkipListNode<TKey, TValue> where TKey : IComparable<TKey>
     }
 }
 
-/// <summary>
-/// 跳表实现（用于主键索引）
-/// </summary>
+/// <summary>跳表实现（用于主键索引）</summary>
 /// <typeparam name="TKey">键类型</typeparam>
 /// <typeparam name="TValue">值类型</typeparam>
 public class SkipList<TKey, TValue> where TKey : IComparable<TKey>
@@ -35,9 +31,7 @@ public class SkipList<TKey, TValue> where TKey : IComparable<TKey>
     private readonly Random _random = new();
     private readonly Object _lock = new();
 
-    /// <summary>
-    /// 元素数量
-    /// </summary>
+    /// <summary>元素数量</summary>
     public Int32 Count
     {
         get
@@ -49,9 +43,7 @@ public class SkipList<TKey, TValue> where TKey : IComparable<TKey>
         }
     }
 
-    /// <summary>
-    /// 创建跳表
-    /// </summary>
+    /// <summary>创建跳表</summary>
     public SkipList()
     {
         _head = new SkipListNode<TKey, TValue>(default!, default!, MaxLevel);
@@ -59,9 +51,7 @@ public class SkipList<TKey, TValue> where TKey : IComparable<TKey>
         _count = 0;
     }
 
-    /// <summary>
-    /// 生成随机层级
-    /// </summary>
+    /// <summary>生成随机层级</summary>
     private Int32 RandomLevel()
     {
         var level = 0;
@@ -72,9 +62,7 @@ public class SkipList<TKey, TValue> where TKey : IComparable<TKey>
         return level;
     }
 
-    /// <summary>
-    /// 插入或更新键值对
-    /// </summary>
+    /// <summary>插入或更新键值对</summary>
     /// <param name="key">键</param>
     /// <param name="value">值</param>
     public void Insert(TKey key, TValue value)
@@ -128,9 +116,7 @@ public class SkipList<TKey, TValue> where TKey : IComparable<TKey>
         }
     }
 
-    /// <summary>
-    /// 查找键对应的值
-    /// </summary>
+    /// <summary>查找键对应的值</summary>
     /// <param name="key">键</param>
     /// <param name="value">输出值</param>
     /// <returns>是否找到</returns>
@@ -165,9 +151,7 @@ public class SkipList<TKey, TValue> where TKey : IComparable<TKey>
         }
     }
 
-    /// <summary>
-    /// 删除键
-    /// </summary>
+    /// <summary>删除键</summary>
     /// <param name="key">键</param>
     /// <returns>是否删除成功</returns>
     public Boolean Remove(TKey key)
@@ -215,9 +199,7 @@ public class SkipList<TKey, TValue> where TKey : IComparable<TKey>
         }
     }
 
-    /// <summary>
-    /// 清空跳表
-    /// </summary>
+    /// <summary>清空跳表</summary>
     public void Clear()
     {
         lock (_lock)
@@ -231,9 +213,7 @@ public class SkipList<TKey, TValue> where TKey : IComparable<TKey>
         }
     }
 
-    /// <summary>
-    /// 检查键是否存在
-    /// </summary>
+    /// <summary>检查键是否存在</summary>
     /// <param name="key">键</param>
     /// <returns>是否存在</returns>
     public Boolean ContainsKey(TKey key)
@@ -241,9 +221,7 @@ public class SkipList<TKey, TValue> where TKey : IComparable<TKey>
         return TryGetValue(key, out _);
     }
 
-    /// <summary>
-    /// 获取所有键值对（按键排序）
-    /// </summary>
+    /// <summary>获取所有键值对（按键排序）</summary>
     /// <returns>键值对列表</returns>
     public List<KeyValuePair<TKey, TValue>> GetAll()
     {

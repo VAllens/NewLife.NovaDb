@@ -1,19 +1,15 @@
-using NewLife.Data;
+﻿using NewLife.Data;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.WAL;
 
-/// <summary>
-/// WAL 恢复管理器
-/// </summary>
+/// <summary>WAL 恢复管理器</summary>
 public class WalRecovery
 {
     private readonly String _walPath;
     private readonly Action<UInt64, Byte[]> _applyPageUpdate;
 
-    /// <summary>
-    /// 最后一个已提交事务的 LSN
-    /// </summary>
+    /// <summary>最后一个已提交事务的 LSN</summary>
     public UInt64 LastCommittedLsn { get; private set; }
 
     public WalRecovery(String walPath, Action<UInt64, Byte[]> applyPageUpdate)
@@ -22,9 +18,7 @@ public class WalRecovery
         _applyPageUpdate = applyPageUpdate ?? throw new ArgumentNullException(nameof(applyPageUpdate));
     }
 
-    /// <summary>
-    /// 执行恢复（重放 WAL）
-    /// </summary>
+    /// <summary>执行恢复（重放 WAL）</summary>
     public void Recover()
     {
         if (!File.Exists(_walPath))
@@ -91,9 +85,7 @@ public class WalRecovery
             $"{appliedCount} page updates applied, last LSN={LastCommittedLsn}");
     }
 
-    /// <summary>
-    /// 读取单个 WAL 记录
-    /// </summary>
+    /// <summary>读取单个 WAL 记录</summary>
     private WalRecord? ReadWalRecord(FileStream fs)
     {
         // 读取长度前缀

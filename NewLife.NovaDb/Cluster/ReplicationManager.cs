@@ -1,4 +1,4 @@
-using NewLife.NovaDb.Core;
+﻿using NewLife.NovaDb.Core;
 using NewLife.NovaDb.WAL;
 
 namespace NewLife.NovaDb.Cluster;
@@ -7,12 +7,12 @@ namespace NewLife.NovaDb.Cluster;
 public class ReplicationManager : IDisposable
 {
     private readonly String _walPath;
-    private readonly Dictionary<String, NodeInfo> _slaves = new();
-    private readonly Dictionary<String, UInt64> _slavePositions = new();
+    private readonly Dictionary<String, NodeInfo> _slaves = [];
+    private readonly Dictionary<String, UInt64> _slavePositions = [];
     private readonly Object _lock = new();
     private Boolean _disposed;
 
-    private readonly List<WalRecord> _replicationBuffer = new();
+    private readonly List<WalRecord> _replicationBuffer = [];
     private UInt64 _masterLsn;
 
     /// <summary>复制缓冲区最大记录数，默认 100 万</summary>

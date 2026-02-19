@@ -1,11 +1,9 @@
-using NewLife.Data;
+﻿using NewLife.Data;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.WAL;
 
-/// <summary>
-/// WAL 写入器
-/// </summary>
+/// <summary>WAL 写入器</summary>
 public class WalWriter : IDisposable
 {
     private readonly String _walPath;
@@ -16,19 +14,13 @@ public class WalWriter : IDisposable
     private Boolean _disposed;
     private DateTime _lastFlush;
 
-    /// <summary>
-    /// WAL 文件路径
-    /// </summary>
+    /// <summary>WAL 文件路径</summary>
     public String WalPath => _walPath;
 
-    /// <summary>
-    /// WAL 模式
-    /// </summary>
+    /// <summary>WAL 模式</summary>
     public WalMode Mode => _mode;
 
-    /// <summary>
-    /// 下一个 LSN
-    /// </summary>
+    /// <summary>下一个 LSN</summary>
     public UInt64 NextLsn
     {
         get
@@ -48,9 +40,7 @@ public class WalWriter : IDisposable
         _lastFlush = DateTime.UtcNow;
     }
 
-    /// <summary>
-    /// 打开 WAL 文件
-    /// </summary>
+    /// <summary>打开 WAL 文件</summary>
     public void Open()
     {
         lock (_lock)
@@ -72,9 +62,7 @@ public class WalWriter : IDisposable
         }
     }
 
-    /// <summary>
-    /// 写入 WAL 记录
-    /// </summary>
+    /// <summary>写入 WAL 记录</summary>
     public UInt64 Write(WalRecord record)
     {
         lock (_lock)
@@ -121,9 +109,7 @@ public class WalWriter : IDisposable
         }
     }
 
-    /// <summary>
-    /// 强制刷新到磁盘
-    /// </summary>
+    /// <summary>强制刷新到磁盘</summary>
     public void Flush()
     {
         lock (_lock)
@@ -136,9 +122,7 @@ public class WalWriter : IDisposable
         }
     }
 
-    /// <summary>
-    /// 截断 WAL（在检查点之后）
-    /// </summary>
+    /// <summary>截断 WAL（在检查点之后）</summary>
     public void Truncate(UInt64 checkpointLsn)
     {
         lock (_lock)
@@ -169,9 +153,7 @@ public class WalWriter : IDisposable
         }
     }
 
-    /// <summary>
-    /// 扫描 WAL 文件以找到最大 LSN
-    /// </summary>
+    /// <summary>扫描 WAL 文件以找到最大 LSN</summary>
     private UInt64 ScanWalForMaxLsn()
     {
         if (_fileStream == null || _fileStream.Length == 0)

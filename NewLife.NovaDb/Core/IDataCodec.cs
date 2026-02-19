@@ -1,4 +1,6 @@
-﻿namespace NewLife.NovaDb.Core;
+﻿using System.Text;
+
+namespace NewLife.NovaDb.Core;
 
 /// <summary>数据值编解码器接口</summary>
 public interface IDataCodec
@@ -135,7 +137,7 @@ public class DefaultDataCodec : IDataCodec
             DataType.Int64 => 8,
             DataType.Double => 8,
             DataType.Decimal => 16, // 128-bit
-            DataType.String => 4 + System.Text.Encoding.UTF8.GetByteCount((String)value), // 长度前缀 + UTF-8
+            DataType.String => 4 + Encoding.UTF8.GetByteCount((String)value), // 长度前缀 + UTF-8
             DataType.Binary => 4 + ((Byte[])value).Length, // 长度前缀 + 数据
             DataType.DateTime => 8, // Ticks
             DataType.GeoPoint => 16, // 2 × Double

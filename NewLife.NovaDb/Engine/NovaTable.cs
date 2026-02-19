@@ -1,13 +1,11 @@
-using NewLife.NovaDb.Core;
+﻿using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Storage;
 using NewLife.NovaDb.Tx;
 using NewLife.NovaDb.WAL;
 
 namespace NewLife.NovaDb.Engine;
 
-/// <summary>
-/// Nova 表实例，支持 MVCC 的单表引擎
-/// </summary>
+/// <summary>Nova 表实例，支持 MVCC 的单表引擎</summary>
 public class NovaTable : IDisposable
 {
     private readonly TableSchema _schema;
@@ -23,19 +21,13 @@ public class NovaTable : IDisposable
     private readonly Object _lock = new();
     private Boolean _disposed;
 
-    /// <summary>
-    /// 表架构
-    /// </summary>
+    /// <summary>表架构</summary>
     public TableSchema Schema => _schema;
 
-    /// <summary>
-    /// 表路径
-    /// </summary>
+    /// <summary>表路径</summary>
     public String TablePath => _tablePath;
 
-    /// <summary>
-    /// 创建 NovaTable 实例
-    /// </summary>
+    /// <summary>创建 NovaTable 实例</summary>
     /// <param name="schema">表架构</param>
     /// <param name="tablePath">表目录路径</param>
     /// <param name="options">数据库选项</param>
@@ -72,9 +64,7 @@ public class NovaTable : IDisposable
         _primaryIndex = new SkipList<ComparableObject, List<RowVersion>>();
     }
 
-    /// <summary>
-    /// 插入行
-    /// </summary>
+    /// <summary>插入行</summary>
     /// <param name="tx">事务</param>
     /// <param name="row">行数据（按列序号排列的值数组）</param>
     public void Insert(Transaction tx, Object?[] row)
@@ -107,7 +97,7 @@ public class NovaTable : IDisposable
             // 检查主键冲突
             if (!_primaryIndex.TryGetValue(comparableKey, out var versions))
             {
-                versions = new List<RowVersion>();
+                versions = [];
                 _primaryIndex.Insert(comparableKey, versions);
             }
             else
@@ -150,9 +140,7 @@ public class NovaTable : IDisposable
         }
     }
 
-    /// <summary>
-    /// 根据主键查询行
-    /// </summary>
+    /// <summary>根据主键查询行</summary>
     /// <param name="tx">事务</param>
     /// <param name="key">主键值</param>
     /// <returns>行数据（如果存在），否则返回 null</returns>
@@ -189,9 +177,7 @@ public class NovaTable : IDisposable
         }
     }
 
-    /// <summary>
-    /// 根据主键更新行
-    /// </summary>
+    /// <summary>根据主键更新行</summary>
     /// <param name="tx">事务</param>
     /// <param name="key">主键值</param>
     /// <param name="newRow">新行数据</param>
@@ -267,9 +253,7 @@ public class NovaTable : IDisposable
         }
     }
 
-    /// <summary>
-    /// 根据主键删除行
-    /// </summary>
+    /// <summary>根据主键删除行</summary>
     /// <param name="tx">事务</param>
     /// <param name="key">主键值</param>
     /// <returns>是否删除成功</returns>
@@ -331,9 +315,7 @@ public class NovaTable : IDisposable
         }
     }
 
-    /// <summary>
-    /// 获取所有可见行
-    /// </summary>
+    /// <summary>获取所有可见行</summary>
     /// <param name="tx">事务</param>
     /// <returns>行数据列表</returns>
     public List<Object?[]> GetAll(Transaction tx)
@@ -366,9 +348,7 @@ public class NovaTable : IDisposable
 
     #region 辅助
 
-    /// <summary>
-    /// 序列化行数据
-    /// </summary>
+    /// <summary>序列化行数据</summary>
     private Byte[] SerializeRow(Object?[] row)
     {
         using var ms = new MemoryStream();
@@ -389,9 +369,7 @@ public class NovaTable : IDisposable
         return ms.ToArray();
     }
 
-    /// <summary>
-    /// 反序列化行数据
-    /// </summary>
+    /// <summary>反序列化行数据</summary>
     private Object?[] DeserializeRow(Byte[] payload)
     {
         using var ms = new MemoryStream(payload);
@@ -413,9 +391,7 @@ public class NovaTable : IDisposable
 
     #endregion
 
-    /// <summary>
-    /// 释放资源
-    /// </summary>
+    /// <summary>释放资源</summary>
     public void Dispose()
     {
         if (_disposed)

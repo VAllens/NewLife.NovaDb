@@ -1,8 +1,6 @@
-namespace NewLife.NovaDb.Engine;
+﻿namespace NewLife.NovaDb.Engine;
 
-/// <summary>
-/// 对象包装器，用于 SkipList 键比较
-/// </summary>
+/// <summary>对象包装器，用于 SkipList 键比较</summary>
 internal class ComparableObject : IComparable<ComparableObject>
 {
     public Object Value { get; }

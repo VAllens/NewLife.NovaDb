@@ -1,20 +1,16 @@
-using System.Linq;
+﻿using System.Linq;
 
 namespace NewLife.NovaDb.Tx;
 
-/// <summary>
-/// 事务管理器，负责分配事务 ID 和提交时间戳
-/// </summary>
+/// <summary>事务管理器，负责分配事务 ID 和提交时间戳</summary>
 public class TransactionManager
 {
     private UInt64 _nextTxId;
     private UInt64 _nextCommitTs;
     private readonly Object _lock = new();
-    private readonly Dictionary<UInt64, Transaction> _activeTxs = new();
+    private readonly Dictionary<UInt64, Transaction> _activeTxs = [];
 
-    /// <summary>
-    /// 获取下一个事务 ID
-    /// </summary>
+    /// <summary>获取下一个事务 ID</summary>
     public UInt64 NextTxId
     {
         get
@@ -26,9 +22,7 @@ public class TransactionManager
         }
     }
 
-    /// <summary>
-    /// 获取下一个提交时间戳
-    /// </summary>
+    /// <summary>获取下一个提交时间戳</summary>
     public UInt64 NextCommitTs
     {
         get
@@ -40,18 +34,14 @@ public class TransactionManager
         }
     }
 
-    /// <summary>
-    /// 创建事务管理器实例
-    /// </summary>
+    /// <summary>创建事务管理器实例</summary>
     public TransactionManager()
     {
         _nextTxId = 1;
         _nextCommitTs = 1;
     }
 
-    /// <summary>
-    /// 开始新事务
-    /// </summary>
+    /// <summary>开始新事务</summary>
     /// <returns>新事务实例</returns>
     public Transaction BeginTransaction()
     {
@@ -64,9 +54,7 @@ public class TransactionManager
         }
     }
 
-    /// <summary>
-    /// 分配提交时间戳
-    /// </summary>
+    /// <summary>分配提交时间戳</summary>
     /// <returns>提交时间戳</returns>
     internal UInt64 AllocateCommitTs()
     {
@@ -76,9 +64,7 @@ public class TransactionManager
         }
     }
 
-    /// <summary>
-    /// 移除事务
-    /// </summary>
+    /// <summary>移除事务</summary>
     /// <param name="txId">事务 ID</param>
     internal void RemoveTransaction(UInt64 txId)
     {
@@ -88,9 +74,7 @@ public class TransactionManager
         }
     }
 
-    /// <summary>
-    /// 检查事务是否活跃
-    /// </summary>
+    /// <summary>检查事务是否活跃</summary>
     /// <param name="txId">事务 ID</param>
     /// <returns>是否活跃</returns>
     public Boolean IsTransactionActive(UInt64 txId)
@@ -101,9 +85,7 @@ public class TransactionManager
         }
     }
 
-    /// <summary>
-    /// 获取所有活跃事务 ID
-    /// </summary>
+    /// <summary>获取所有活跃事务 ID</summary>
     /// <returns>活跃事务 ID 列表</returns>
     public UInt64[] GetActiveTransactions()
     {
@@ -113,9 +95,7 @@ public class TransactionManager
         }
     }
 
-    /// <summary>
-    /// 检查事务对于读取事务是否可见
-    /// </summary>
+    /// <summary>检查事务对于读取事务是否可见</summary>
     /// <param name="createdByTx">创建行的事务 ID</param>
     /// <param name="deletedByTx">删除行的事务 ID（0 表示未删除）</param>
     /// <param name="readTxId">读取事务 ID</param>

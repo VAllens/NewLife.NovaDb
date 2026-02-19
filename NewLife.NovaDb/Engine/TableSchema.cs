@@ -1,40 +1,26 @@
-using NewLife.NovaDb.Core;
+﻿using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Engine;
 
-/// <summary>
-/// 列定义
-/// </summary>
+/// <summary>列定义</summary>
 public class ColumnDefinition
 {
-    /// <summary>
-    /// 列名
-    /// </summary>
+    /// <summary>列名</summary>
     public String Name { get; set; } = String.Empty;
 
-    /// <summary>
-    /// 数据类型
-    /// </summary>
+    /// <summary>数据类型</summary>
     public DataType DataType { get; set; }
 
-    /// <summary>
-    /// 是否允许为空
-    /// </summary>
+    /// <summary>是否允许为空</summary>
     public Boolean Nullable { get; set; } = true;
 
-    /// <summary>
-    /// 是否为主键
-    /// </summary>
+    /// <summary>是否为主键</summary>
     public Boolean IsPrimaryKey { get; set; }
 
-    /// <summary>
-    /// 列序号（从 0 开始）
-    /// </summary>
+    /// <summary>列序号（从 0 开始）</summary>
     public Int32 Ordinal { get; set; }
 
-    /// <summary>
-    /// 创建列定义
-    /// </summary>
+    /// <summary>创建列定义</summary>
     /// <param name="name">列名</param>
     /// <param name="dataType">数据类型</param>
     /// <param name="nullable">是否允许为空</param>
@@ -48,42 +34,30 @@ public class ColumnDefinition
     }
 }
 
-/// <summary>
-/// 表架构定义
-/// </summary>
+/// <summary>表架构定义</summary>
 public class TableSchema
 {
-    private readonly List<ColumnDefinition> _columns = new();
-    private readonly Dictionary<String, Int32> _columnIndexes = new();
+    private readonly List<ColumnDefinition> _columns = [];
+    private readonly Dictionary<String, Int32> _columnIndexes = [];
     private Int32? _primaryKeyIndex;
 
-    /// <summary>
-    /// 表名
-    /// </summary>
+    /// <summary>表名</summary>
     public String TableName { get; set; } = String.Empty;
 
-    /// <summary>
-    /// 列定义列表
-    /// </summary>
+    /// <summary>列定义列表</summary>
     public IReadOnlyList<ColumnDefinition> Columns => _columns;
 
-    /// <summary>
-    /// 主键列索引（如果没有主键则为 null）
-    /// </summary>
+    /// <summary>主键列索引（如果没有主键则为 null）</summary>
     public Int32? PrimaryKeyIndex => _primaryKeyIndex;
 
-    /// <summary>
-    /// 创建表架构
-    /// </summary>
+    /// <summary>创建表架构</summary>
     /// <param name="tableName">表名</param>
     public TableSchema(String tableName)
     {
         TableName = tableName ?? throw new ArgumentNullException(nameof(tableName));
     }
 
-    /// <summary>
-    /// 添加列
-    /// </summary>
+    /// <summary>添加列</summary>
     /// <param name="column">列定义</param>
     public void AddColumn(ColumnDefinition column)
     {
@@ -106,9 +80,7 @@ public class TableSchema
         }
     }
 
-    /// <summary>
-    /// 获取列索引
-    /// </summary>
+    /// <summary>获取列索引</summary>
     /// <param name="columnName">列名</param>
     /// <returns>列索引</returns>
     public Int32 GetColumnIndex(String columnName)
@@ -122,9 +94,7 @@ public class TableSchema
         return index;
     }
 
-    /// <summary>
-    /// 获取列定义
-    /// </summary>
+    /// <summary>获取列定义</summary>
     /// <param name="columnName">列名</param>
     /// <returns>列定义</returns>
     public ColumnDefinition GetColumn(String columnName)
@@ -133,9 +103,7 @@ public class TableSchema
         return _columns[index];
     }
 
-    /// <summary>
-    /// 获取主键列定义
-    /// </summary>
+    /// <summary>获取主键列定义</summary>
     /// <returns>主键列定义</returns>
     public ColumnDefinition? GetPrimaryKeyColumn()
     {
@@ -145,9 +113,7 @@ public class TableSchema
         return _columns[_primaryKeyIndex.Value];
     }
 
-    /// <summary>
-    /// 检查列是否存在
-    /// </summary>
+    /// <summary>检查列是否存在</summary>
     /// <param name="columnName">列名</param>
     /// <returns>是否存在</returns>
     public Boolean HasColumn(String columnName)

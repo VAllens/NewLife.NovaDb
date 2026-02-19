@@ -128,23 +128,15 @@ public class FileHeader
     }
 }
 
-/// <summary>
-/// 文件类型枚举
-/// </summary>
+/// <summary>文件类型枚举</summary>
 public enum FileType : Byte
 {
-    /// <summary>
-    /// 数据文件 (.data)
-    /// </summary>
+    /// <summary>数据文件 (.data)</summary>
     Data = 1,
 
-    /// <summary>
-    /// 索引文件 (.idx)
-    /// </summary>
+    /// <summary>索引文件 (.idx)</summary>
     Index = 2,
 
-    /// <summary>
-    /// WAL 日志文件 (.wal)
-    /// </summary>
+    /// <summary>WAL 日志文件 (.wal)</summary>
     Wal = 3
 }

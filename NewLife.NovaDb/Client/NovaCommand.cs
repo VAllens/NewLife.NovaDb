@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using System.Data.Common;
 using NewLife.NovaDb.Sql;
 
@@ -8,7 +8,7 @@ namespace NewLife.NovaDb.Client;
 public class NovaCommand : DbCommand
 {
     private String _commandText = String.Empty;
-    private readonly NovaParameterCollection _parameters = new();
+    private readonly NovaParameterCollection _parameters = [];
 
     /// <summary>SQL 命令文本</summary>
     public override String CommandText

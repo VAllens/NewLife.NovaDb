@@ -1,4 +1,4 @@
-using NewLife.NovaDb.WAL;
+﻿using NewLife.NovaDb.WAL;
 
 namespace NewLife.NovaDb.Cluster;
 
@@ -8,7 +8,7 @@ public class ReplicaClient : IDisposable
     private readonly NodeInfo _localNode;
     private readonly String _masterEndpoint;
     private UInt64 _lastAppliedLsn;
-    private readonly List<WalRecord> _appliedRecords = new();
+    private readonly List<WalRecord> _appliedRecords = [];
     private readonly Action<UInt64, Byte[]>? _applyCallback;
     private readonly Object _lock = new();
     private Boolean _isConnected;

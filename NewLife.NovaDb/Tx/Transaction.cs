@@ -1,31 +1,21 @@
-using NewLife.NovaDb.Core;
+﻿using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Tx;
 
-/// <summary>
-/// 事务状态
-/// </summary>
+/// <summary>事务状态</summary>
 public enum TransactionState
 {
-    /// <summary>
-    /// 活跃中
-    /// </summary>
+    /// <summary>活跃中</summary>
     Active,
 
-    /// <summary>
-    /// 已提交
-    /// </summary>
+    /// <summary>已提交</summary>
     Committed,
 
-    /// <summary>
-    /// 已回滚
-    /// </summary>
+    /// <summary>已回滚</summary>
     Aborted
 }
 
-/// <summary>
-/// 事务实例
-/// </summary>
+/// <summary>事务实例</summary>
 public class Transaction : IDisposable
 {
     private readonly UInt64 _txId;
@@ -33,17 +23,13 @@ public class Transaction : IDisposable
     private TransactionState _state;
     private UInt64 _commitTs;
     private readonly Object _lock = new();
-    private readonly List<Action> _rollbackActions = new();
+    private readonly List<Action> _rollbackActions = [];
     private Boolean _disposed;
 
-    /// <summary>
-    /// 事务 ID
-    /// </summary>
+    /// <summary>事务 ID</summary>
     public UInt64 TxId => _txId;
 
-    /// <summary>
-    /// 事务状态
-    /// </summary>
+    /// <summary>事务状态</summary>
     public TransactionState State
     {
         get
@@ -55,9 +41,7 @@ public class Transaction : IDisposable
         }
     }
 
-    /// <summary>
-    /// 提交时间戳（仅在提交后有效）
-    /// </summary>
+    /// <summary>提交时间戳（仅在提交后有效）</summary>
     public UInt64 CommitTs
     {
         get
@@ -69,9 +53,7 @@ public class Transaction : IDisposable
         }
     }
 
-    /// <summary>
-    /// 创建事务实例
-    /// </summary>
+    /// <summary>创建事务实例</summary>
     /// <param name="txId">事务 ID</param>
     /// <param name="manager">事务管理器</param>
     internal Transaction(UInt64 txId, TransactionManager manager)
@@ -82,9 +64,7 @@ public class Transaction : IDisposable
         _commitTs = 0;
     }
 
-    /// <summary>
-    /// 提交事务
-    /// </summary>
+    /// <summary>提交事务</summary>
     public void Commit()
     {
         lock (_lock)
@@ -107,9 +87,7 @@ public class Transaction : IDisposable
         }
     }
 
-    /// <summary>
-    /// 回滚事务
-    /// </summary>
+    /// <summary>回滚事务</summary>
     public void Rollback()
     {
         lock (_lock)
@@ -141,9 +119,7 @@ public class Transaction : IDisposable
         }
     }
 
-    /// <summary>
-    /// 注册回滚动作
-    /// </summary>
+    /// <summary>注册回滚动作</summary>
     /// <param name="action">回滚动作</param>
     public void RegisterRollbackAction(Action action)
     {
@@ -159,9 +135,7 @@ public class Transaction : IDisposable
         }
     }
 
-    /// <summary>
-    /// 释放资源
-    /// </summary>
+    /// <summary>释放资源</summary>
     public void Dispose()
     {
         lock (_lock)
