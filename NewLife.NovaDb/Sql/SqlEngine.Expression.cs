@@ -570,9 +570,6 @@ partial class SqlEngine
                     return BitConverter.ToString(hash).Replace("-", String.Empty).ToLower();
                 }
 
-            default:
-                throw new NovaException(ErrorCode.NotSupported, $"Unsupported function: {func.FunctionName}");
-
             // GeoPoint 函数
             case "GEOPOINT":
                 if (args.Count < 2) throw new NovaException(ErrorCode.InvalidArgument, "GEOPOINT requires 2 arguments (lat, lon)");
@@ -606,6 +603,9 @@ partial class SqlEngine
             case "DOT_PRODUCT":
                 if (args.Count < 2 || args[0] == null || args[1] == null) return null;
                 return DotProduct((Single[])args[0]!, (Single[])args[1]!);
+
+            default:
+                throw new NovaException(ErrorCode.NotSupported, $"Unsupported function: {func.FunctionName}");
         }
     }
 
