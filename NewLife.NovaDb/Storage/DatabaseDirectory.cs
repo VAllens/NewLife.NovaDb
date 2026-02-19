@@ -39,7 +39,7 @@ public class DatabaseDirectory
         if (metaFile.Exists && metaFile.Length > 0)
             throw new NovaException(ErrorCode.InvalidArgument, $"Database directory already exists: {_basePath}");
 
-        _basePath.EnsureDirectory();
+        _basePath.EnsureDirectory(false);
 
         // 写入元数据文件
         var header = new FileHeader

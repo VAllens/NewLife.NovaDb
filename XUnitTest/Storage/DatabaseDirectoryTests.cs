@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
+using NewLife;
 using NewLife.Data;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Storage;
@@ -60,7 +61,7 @@ public class DatabaseDirectoryTests : IDisposable
         db.Create();
 
         Assert.True(Directory.Exists(_testPath));
-        Assert.True(File.Exists(Path.Combine(_testPath, "nova.db")));
+        Assert.True(_testPath.CombinePath("nova.db").AsFile().Exists);
     }
 
     [Fact]
@@ -70,7 +71,7 @@ public class DatabaseDirectoryTests : IDisposable
         db.Create();
 
         // 验证元数据文件内容
-        var metaBytes = File.ReadAllBytes(Path.Combine(_testPath, "nova.db"));
+        var metaBytes = File.ReadAllBytes(_testPath.CombinePath("nova.db"));
         Assert.Equal(FileHeader.HeaderSize, metaBytes.Length);
 
         var header = FileHeader.Read(new ArrayPacket(metaBytes));
@@ -84,8 +85,8 @@ public class DatabaseDirectoryTests : IDisposable
     public void TestCreateDatabaseAlreadyExists()
     {
         Directory.CreateDirectory(_testPath);
-        var metaPath = Path.Combine(_testPath, "nova.db");
-        File.WriteAllBytes(metaPath, new Byte[] { 1 });
+        var metaFile = _testPath.CombinePath("nova.db").AsFile();
+        File.WriteAllBytes(metaFile.FullName, new Byte[] { 1 });
 
         var db = new DatabaseDirectory(_testPath, _options);
         var ex = Assert.Throws<NovaException>(() => db.Create());
@@ -102,22 +103,22 @@ public class DatabaseDirectoryTests : IDisposable
         var db = new DatabaseDirectory(_testPath, _options);
         db.Create();
 
-        var metaPath = Path.Combine(_testPath, "nova.db");
-        Assert.True(File.Exists(metaPath));
-        Assert.Equal(FileHeader.HeaderSize, new FileInfo(metaPath).Length);
+        var metaFile = _testPath.CombinePath("nova.db").AsFile();
+        Assert.True(metaFile.Exists);
+        Assert.Equal(FileHeader.HeaderSize, metaFile.Length);
     }
 
     [Fact]
     public void TestCreateDatabaseWithEmptyMetadata()
     {
         Directory.CreateDirectory(_testPath);
-        var metaPath = Path.Combine(_testPath, "nova.db");
-        File.WriteAllBytes(metaPath, Array.Empty<Byte>());
+        var metaFile = _testPath.CombinePath("nova.db").AsFile();
+        File.WriteAllBytes(metaFile.FullName, Array.Empty<Byte>());
 
         var db = new DatabaseDirectory(_testPath, _options);
         db.Create();
 
-        Assert.Equal(FileHeader.HeaderSize, new FileInfo(metaPath).Length);
+        Assert.Equal(FileHeader.HeaderSize, metaFile.Length);
     }
     #endregion
 
