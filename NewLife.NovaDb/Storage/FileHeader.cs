@@ -9,7 +9,7 @@ namespace NewLife.NovaDb.Storage;
 /// 文件头布局（32 字节）：
 /// - 0-3: Magic Number (0x4E4F5641 "NOVA")
 /// - 4: Version (当前版本 1)
-/// - 5: FileType (1=Data, 2=Index, 3=Wal, 4=Binlog)
+/// - 5: FileType (1=Data, 2=Index, 3=Wal, 4=Binlog, 5=Metadata)
 /// - 6: PageSizeShift (页大小位移，实际页大小 = 1 &lt;&lt; shift)
 /// - 7: Flags (特性标志：bit0=加密, bit1=压缩, bit2=只读)
 /// - 8-15: CreateTime (创建时间，UTC 毫秒)
@@ -170,7 +170,10 @@ public enum FileType : Byte
     Wal = 3,
 
     /// <summary>Binlog 逻辑日志文件（主从同步/增量备份）</summary>
-    Binlog = 4
+    Binlog = 4,
+
+    /// <summary>数据库元数据文件 (nova.db)</summary>
+    Metadata = 5
 }
 
 /// <summary>文件特性标志</summary>
