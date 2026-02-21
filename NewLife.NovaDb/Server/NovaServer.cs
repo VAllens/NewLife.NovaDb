@@ -26,6 +26,9 @@ public class NovaServer : DisposeBase
     /// <summary>数据库路径。为空时使用当前目录下的 NovaData 文件夹</summary>
     public String DbPath { get; set; } = String.Empty;
 
+    /// <summary>服务模式数据库配置选项</summary>
+    public ServerDbOptions Options { get; set; } = new();
+
     /// <summary>SQL 执行引擎</summary>
     public SqlEngine? SqlEngine => _sqlEngine;
 
@@ -50,7 +53,8 @@ public class NovaServer : DisposeBase
             dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "NovaData");
 
         // 初始化数据库管理器，创建/打开系统库并扫描发现所有数据库
-        var dbOptions = new DbOptions { Path = dbPath };
+        var dbOptions = Options;
+        dbOptions.Path = dbPath;
         _dbManager = new DatabaseManager(dbPath, dbOptions);
         _dbManager.Initialize();
 
