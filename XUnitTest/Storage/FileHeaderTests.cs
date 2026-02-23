@@ -33,7 +33,7 @@ public class FileHeaderTests
         Assert.Equal(FileHeader.HeaderSize, bytes.Length);
         Assert.Equal(32, bytes.Length);
 
-        var deserialized = FileHeader.Read(new ArrayPacket(bytes));
+        var deserialized = FileHeader.Read(bytes);
 
         Assert.Equal(header.Version, deserialized.Version);
         Assert.Equal(header.FileType, deserialized.FileType);
@@ -60,7 +60,7 @@ public class FileHeaderTests
         // Flags 在 offset 7
         Assert.Equal((Byte)(FileFlags.Encrypted | FileFlags.Compressed), bytes[7]);
 
-        var deserialized = FileHeader.Read(new ArrayPacket(bytes));
+        var deserialized = FileHeader.Read(bytes);
         Assert.Equal(FileFlags.Encrypted | FileFlags.Compressed, deserialized.Flags);
     }
 
@@ -78,7 +78,7 @@ public class FileHeaderTests
         // 篡改 Checksum（offset 28-31）
         bytes[28] ^= 0xFF;
 
-        var ex = Assert.Throws<NovaException>(() => FileHeader.Read(new ArrayPacket(bytes)));
+        var ex = Assert.Throws<NovaException>(() => FileHeader.Read(bytes));
         Assert.Equal(ErrorCode.ChecksumFailed, ex.Code);
         Assert.Contains("checksum mismatch", ex.Message);
     }
@@ -98,7 +98,7 @@ public class FileHeaderTests
         // 篡改 CreateTime 区域（offset 8-15），但不更新 Checksum
         bytes[10] ^= 0xFF;
 
-        var ex = Assert.Throws<NovaException>(() => FileHeader.Read(new ArrayPacket(bytes)));
+        var ex = Assert.Throws<NovaException>(() => FileHeader.Read(bytes));
         Assert.Equal(ErrorCode.ChecksumFailed, ex.Code);
     }
 
@@ -130,7 +130,7 @@ public class FileHeaderTests
         BitConverter.GetBytes(0xDEADBEEFu).CopyTo(bytes, 0);
         RecomputeChecksum(bytes);
 
-        var ex = Assert.Throws<NovaException>(() => FileHeader.Read(new ArrayPacket(bytes)));
+        var ex = Assert.Throws<NovaException>(() => FileHeader.Read(bytes));
         Assert.Equal(ErrorCode.FileCorrupted, ex.Code);
         Assert.Contains("Invalid magic number", ex.Message);
     }
@@ -138,14 +138,14 @@ public class FileHeaderTests
     [Fact]
     public void TestNullBuffer()
     {
-        Assert.Throws<ArgumentNullException>(() => FileHeader.Read(null!));
+        Assert.Throws<ArgumentNullException>(() => FileHeader.Read((IPacket)null!));
     }
 
     [Fact]
     public void TestBufferTooShort()
     {
         var bytes = new Byte[31]; // 少于 32 字节
-        var ex = Assert.Throws<ArgumentException>(() => FileHeader.Read(new ArrayPacket(bytes)));
+        var ex = Assert.Throws<ArgumentException>(() => FileHeader.Read(bytes));
         Assert.Contains("too short", ex.Message);
     }
 
@@ -160,7 +160,7 @@ public class FileHeaderTests
         bytes[5] = 99;
         RecomputeChecksum(bytes);
 
-        var ex = Assert.Throws<NovaException>(() => FileHeader.Read(new ArrayPacket(bytes)));
+        var ex = Assert.Throws<NovaException>(() => FileHeader.Read(bytes));
         Assert.Equal(ErrorCode.FileCorrupted, ex.Code);
         Assert.Contains("Invalid file type", ex.Message);
     }
@@ -176,7 +176,7 @@ public class FileHeaderTests
         bytes[6] = 25;
         RecomputeChecksum(bytes);
 
-        var ex = Assert.Throws<NovaException>(() => FileHeader.Read(new ArrayPacket(bytes)));
+        var ex = Assert.Throws<NovaException>(() => FileHeader.Read(bytes));
         Assert.Equal(ErrorCode.FileCorrupted, ex.Code);
         Assert.Contains("Invalid page size shift", ex.Message);
     }
@@ -206,7 +206,7 @@ public class FileHeaderTests
 
             using var pk = header.ToPacket();
             var bytes = pk.GetSpan().ToArray();
-            var deserialized = FileHeader.Read(new ArrayPacket(bytes));
+            var deserialized = FileHeader.Read(bytes);
 
             Assert.Equal(type, deserialized.FileType);
         }
@@ -218,13 +218,13 @@ public class FileHeaderTests
         // 最小有效 PageSize (2^0 = 1)
         var header1 = new FileHeader { FileType = FileType.Data, PageSize = 1 };
         using var pk1 = header1.ToPacket();
-        var deserialized1 = FileHeader.Read(new ArrayPacket(pk1.GetSpan().ToArray()));
+        var deserialized1 = FileHeader.Read(pk1.GetSpan());
         Assert.Equal(1u, deserialized1.PageSize);
 
         // 最大有效 PageSize (2^24 = 16MB)
         var header2 = new FileHeader { FileType = FileType.Data, PageSize = 16 * 1024 * 1024 };
         using var pk2 = header2.ToPacket();
-        var deserialized2 = FileHeader.Read(new ArrayPacket(pk2.GetSpan().ToArray()));
+        var deserialized2 = FileHeader.Read(pk2.GetSpan());
         Assert.Equal(16u * 1024 * 1024, deserialized2.PageSize);
     }
 
@@ -237,7 +237,7 @@ public class FileHeaderTests
         {
             var header = new FileHeader { FileType = FileType.Data, PageSize = size };
             using var pk = header.ToPacket();
-            var deserialized = FileHeader.Read(new ArrayPacket(pk.GetSpan().ToArray()));
+            var deserialized = FileHeader.Read(pk.GetSpan());
             Assert.Equal(size, deserialized.PageSize);
         }
     }
@@ -254,7 +254,7 @@ public class FileHeaderTests
 
         using var pk = header.ToPacket();
         var bytes = pk.GetSpan().ToArray();
-        var deserialized = FileHeader.Read(new ArrayPacket(bytes));
+        var deserialized = FileHeader.Read(bytes);
 
         Assert.Equal(42, deserialized.Version);
     }
@@ -272,7 +272,7 @@ public class FileHeaderTests
 
         using var pk = header.ToPacket();
         var bytes = pk.GetSpan().ToArray();
-        var deserialized = FileHeader.Read(new ArrayPacket(bytes));
+        var deserialized = FileHeader.Read(bytes);
 
         // UTC 毫秒序列化会丢失亚毫秒精度，比较到秒级
         Assert.True(Math.Abs((now - deserialized.CreateTime).TotalSeconds) < 1);

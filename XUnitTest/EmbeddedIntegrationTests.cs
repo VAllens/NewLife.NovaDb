@@ -62,7 +62,7 @@ public class EmbeddedIntegrationTests : IDisposable
         using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         if (fs.Read(bytes, 0, FileHeader.HeaderSize) < FileHeader.HeaderSize)
             throw new InvalidOperationException($"文件过短，无法读取文件头: {filePath}");
-        return FileHeader.Read(new ArrayPacket(bytes));
+        return FileHeader.Read(bytes);
     }
 
     /// <summary>统计 WAL 文件中的记录数</summary>
