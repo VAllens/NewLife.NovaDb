@@ -162,7 +162,16 @@ public partial class NovaTable : IDisposable
 
             // 维护二级索引
             if (_secondaryIndexes.Count > 0)
+            {
                 InsertIntoSecondaryIndexes(row, comparableKey);
+
+                // 注册提交动作：事务提交时持久化索引文件
+                foreach (var idxName in _secondaryIndexes.Keys)
+                {
+                    var name = idxName;
+                    tx.RegisterCommitAction(() => PersistSecondaryIndex(name));
+                }
+            }
 
             // 更新分片统计
             _shardManager.RecordWrite(DefaultShardId, payload.Length);
@@ -297,7 +306,16 @@ public partial class NovaTable : IDisposable
 
             // 维护二级索引：插入新值
             if (_secondaryIndexes.Count > 0)
+            {
                 InsertIntoSecondaryIndexes(newRow, comparableKey);
+
+                // 注册提交动作：事务提交时持久化索引文件
+                foreach (var idxName in _secondaryIndexes.Keys)
+                {
+                    var name = idxName;
+                    tx.RegisterCommitAction(() => PersistSecondaryIndex(name));
+                }
+            }
 
             // 更新分片统计
             _shardManager.RecordWrite(DefaultShardId, payload.Length);
@@ -382,6 +400,13 @@ public partial class NovaTable : IDisposable
             {
                 deletedRow = DeserializeRow(visibleVersion.Payload!);
                 RemoveFromSecondaryIndexes(deletedRow, comparableKey);
+
+                // 注册提交动作：事务提交时持久化索引文件
+                foreach (var idxName in _secondaryIndexes.Keys)
+                {
+                    var name = idxName;
+                    tx.RegisterCommitAction(() => PersistSecondaryIndex(name));
+                }
             }
 
             // 标记为已删除
@@ -518,6 +543,10 @@ public partial class NovaTable : IDisposable
                     }
                 }
             }
+
+            // 注册提交动作：事务提交时持久化索引文件
+            var persistName = indexDef.IndexName;
+            tx.RegisterCommitAction(() => PersistSecondaryIndex(persistName));
         }
     }
 
@@ -529,6 +558,9 @@ public partial class NovaTable : IDisposable
         {
             _secondaryIndexes.Remove(indexName);
         }
+
+        // 删除索引文件
+        DeleteSecondaryIndexFile(indexName);
     }
 
     /// <summary>通过二级索引查询匹配的主键列表</summary>
@@ -634,6 +666,78 @@ public partial class NovaTable : IDisposable
 
     /// <summary>比较两个索引键</summary>
     private static Int32 CompareKeys(ComparableObject a, ComparableObject b) => a.CompareTo(b);
+
+    /// <summary>将二级索引持久化到 .idx 文件（全量重写）</summary>
+    /// <param name="indexName">索引名称</param>
+    private void PersistSecondaryIndex(String indexName)
+    {
+        var idxDef = _schema.GetIndex(indexName);
+        if (idxDef == null) return;
+
+        lock (_lock)
+        {
+            if (!_secondaryIndexes.TryGetValue(indexName, out var idx)) return;
+
+            var filePath = _fileManager.GetSecondaryIndexFilePath(indexName);
+            var colOrdinals = GetColumnOrdinals(idxDef);
+            var pkCol = _schema.GetPrimaryKeyColumn()!;
+
+            // 确定索引键数据类型（单列索引用列类型，组合索引编码为字符串）
+            var indexKeyType = colOrdinals.Length == 1
+                ? _schema.Columns[colOrdinals[0]].DataType
+                : DataType.String;
+
+            using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.Read);
+
+            // 写入文件头
+            var header = new FileHeader
+            {
+                Version = 1,
+                FileType = FileType.Index,
+                PageSize = (UInt32)_options.PageSize,
+                CreateTime = DateTime.Now
+            };
+            using var headerPk = header.ToPacket();
+            if (headerPk.TryGetArray(out var segment))
+                fs.Write(segment.Array!, segment.Offset, segment.Count);
+
+            // 写入索引条目
+            using var bw = new BinaryWriter(fs, System.Text.Encoding.UTF8, leaveOpen: true);
+
+            var allEntries = idx.GetAll();
+            bw.Write(allEntries.Count);
+
+            foreach (var entry in allEntries)
+            {
+                // 编码索引键
+                var keyBytes = _codec.Encode(entry.Key.Value, indexKeyType);
+                bw.Write(keyBytes.Length);
+                bw.Write(keyBytes);
+
+                // 写入主键列表
+                var pkList = entry.Value;
+                bw.Write(pkList.Count);
+                foreach (var pk in pkList)
+                {
+                    var pkBytes = _codec.Encode(pk.Value, pkCol.DataType);
+                    bw.Write(pkBytes.Length);
+                    bw.Write(pkBytes);
+                }
+            }
+        }
+    }
+
+    /// <summary>删除二级索引的 .idx 文件</summary>
+    /// <param name="indexName">索引名称</param>
+    private void DeleteSecondaryIndexFile(String indexName)
+    {
+        var filePath = _fileManager.GetSecondaryIndexFilePath(indexName);
+        if (File.Exists(filePath))
+        {
+            try { File.Delete(filePath); }
+            catch { }
+        }
+    }
 
     #endregion
 

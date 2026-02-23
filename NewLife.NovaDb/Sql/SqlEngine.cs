@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
+using NewLife.NovaDb.Storage;
 using NewLife.NovaDb.Tx;
 using NewLife.NovaDb.WAL;
 
@@ -57,9 +58,32 @@ public partial class SqlEngine : IDisposable
         Metrics = new NovaMetrics { StartTime = DateTime.Now };
         SlowQuery = new SlowQueryLog();
 
-        // 只读模式下不自动创建目录
-        if (!_options.ReadOnly && !Directory.Exists(_dbPath))
-            Directory.CreateDirectory(_dbPath);
+        // 只读模式下不自动创建目录和元数据
+        if (!_options.ReadOnly)
+        {
+            if (!Directory.Exists(_dbPath))
+                Directory.CreateDirectory(_dbPath);
+
+            // 确保数据库元数据文件 nova.db 存在
+            var metaPath = Path.Combine(_dbPath, "nova.db");
+            if (!File.Exists(metaPath))
+            {
+                var header = new FileHeader
+                {
+                    Version = 1,
+                    FileType = FileType.Data,
+                    PageSize = (UInt32)_options.PageSize,
+                    CreateTime = DateTime.Now
+                };
+
+                using var pk = header.ToPacket();
+                if (pk.TryGetArray(out var segment))
+                {
+                    using var fs = new FileStream(metaPath, FileMode.Create, FileAccess.Write);
+                    fs.Write(segment.Array!, segment.Offset, segment.Count);
+                }
+            }
+        }
     }
     #endregion
 

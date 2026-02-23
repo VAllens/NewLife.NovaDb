@@ -51,6 +51,11 @@ public class EmbeddedIntegrationTests : IDisposable
     /// <summary>获取表的 .idx 文件路径</summary>
     private String GetIdxFilePath(String tableName) => Path.Combine(_dbPath, $"{tableName}.idx");
 
+    /// <summary>获取二级索引的 .idx 文件路径</summary>
+    /// <param name="tableName">表名</param>
+    /// <param name="indexName">索引名</param>
+    private String GetSecondaryIdxFilePath(String tableName, String indexName) => Path.Combine(_dbPath, $"{tableName}_{indexName}.idx");
+
     /// <summary>获取表的 .wal 文件路径</summary>
     private String GetWalFilePath(String tableName) => Path.Combine(_dbPath, $"{tableName}.wal");
 
@@ -94,6 +99,10 @@ public class EmbeddedIntegrationTests : IDisposable
         var rows = cmd.ExecuteNonQuery();
         Assert.Equal(0, rows);
 
+        // 验证数据库元数据文件已创建
+        var metaFile = Path.Combine(_dbPath, "nova.db");
+        Assert.True(File.Exists(metaFile), "数据库元数据文件 nova.db 应在首次建表后创建");
+
         // 验证 .data 文件已创建
         var dataFile = GetDataFilePath("emb_ddl_create");
         Assert.True(File.Exists(dataFile), ".data 文件应在建表后存在");
@@ -107,6 +116,22 @@ public class EmbeddedIntegrationTests : IDisposable
 
         // .data 文件大小应至少包含一个 32 字节的文件头
         Assert.True(new FileInfo(dataFile).Length >= FileHeader.HeaderSize, ".data 文件大小应不小于文件头 32 字节");
+
+        // 通过系统表验证表信息存在
+        cmd.CommandText = "SELECT * FROM _sys.tables";
+        using var reader = cmd.ExecuteReader();
+        var found = false;
+        while (reader.Read())
+        {
+            if (Convert.ToString(reader["name"]) == "emb_ddl_create")
+            {
+                found = true;
+                Assert.Equal(6, Convert.ToInt32(reader["column_count"]));
+                Assert.Equal("id", Convert.ToString(reader["primary_key"]));
+                break;
+            }
+        }
+        Assert.True(found, "系统表 _sys.tables 中应包含新建的表信息");
     }
 
     [Fact(DisplayName = "嵌入式-创建表IF NOT EXISTS")]
@@ -130,7 +155,7 @@ public class EmbeddedIntegrationTests : IDisposable
         using var conn = CreateConnection();
         using var cmd = conn.CreateCommand();
 
-        cmd.CommandText = "CREATE TABLE emb_ddl_drop (id INT PRIMARY KEY)";
+        cmd.CommandText = "CREATE TABLE emb_ddl_drop (id INT PRIMARY KEY, name VARCHAR)";
         cmd.ExecuteNonQuery();
 
         // 建表后文件应存在且文件头正确
@@ -140,6 +165,26 @@ public class EmbeddedIntegrationTests : IDisposable
         Assert.Equal(FileType.Data, header.FileType);
         Assert.Equal(4096u, header.PageSize);
 
+        // 验证数据库元数据文件存在
+        var metaFile = Path.Combine(_dbPath, "nova.db");
+        Assert.True(File.Exists(metaFile), "数据库元数据文件 nova.db 应在建表后存在");
+
+        // 建表后系统表应包含该表
+        cmd.CommandText = "SELECT * FROM _sys.tables";
+        using (var reader = cmd.ExecuteReader())
+        {
+            var foundBefore = false;
+            while (reader.Read())
+            {
+                if (Convert.ToString(reader["name"]) == "emb_ddl_drop")
+                {
+                    foundBefore = true;
+                    break;
+                }
+            }
+            Assert.True(foundBefore, "建表后系统表应包含 emb_ddl_drop");
+        }
+
         cmd.CommandText = "DROP TABLE emb_ddl_drop";
         var rows = cmd.ExecuteNonQuery();
         Assert.Equal(0, rows);
@@ -148,6 +193,28 @@ public class EmbeddedIntegrationTests : IDisposable
         Assert.False(File.Exists(dataFile), ".data 文件应在删表后被删除");
         Assert.False(File.Exists(GetIdxFilePath("emb_ddl_drop")), ".idx 文件应在删表后被删除");
         Assert.False(File.Exists(GetWalFilePath("emb_ddl_drop")), ".wal 文件应在删表后被删除");
+
+        // 删表后元数据文件应仍然存在
+        Assert.True(File.Exists(metaFile), "数据库元数据文件 nova.db 应在删表后保留");
+        var metaHeader = ReadFileHeader(metaFile);
+        Assert.Equal(FileType.Data, metaHeader.FileType);
+        Assert.Equal(4096u, metaHeader.PageSize);
+
+        // 删表后系统表不应再包含该表信息
+        cmd.CommandText = "SELECT * FROM _sys.tables";
+        using (var reader2 = cmd.ExecuteReader())
+        {
+            var foundAfter = false;
+            while (reader2.Read())
+            {
+                if (Convert.ToString(reader2["name"]) == "emb_ddl_drop")
+                {
+                    foundAfter = true;
+                    break;
+                }
+            }
+            Assert.False(foundAfter, "删表后系统表不应再包含 emb_ddl_drop");
+        }
     }
 
     [Fact(DisplayName = "嵌入式-删除表IF EXISTS")]
@@ -174,6 +241,32 @@ public class EmbeddedIntegrationTests : IDisposable
         cmd.CommandText = "CREATE INDEX idx_emb_name ON emb_ddl_idx (name)";
         var rows = cmd.ExecuteNonQuery();
         Assert.Equal(0, rows);
+
+        // 通过系统表验证索引信息存在
+        cmd.CommandText = "SELECT * FROM _sys.indexes";
+        using var reader = cmd.ExecuteReader();
+        var found = false;
+        while (reader.Read())
+        {
+            var tbl = Convert.ToString(reader["table_name"]);
+            var idxName = Convert.ToString(reader["index_name"]);
+            if (tbl == "emb_ddl_idx" && idxName == "idx_emb_name")
+            {
+                found = true;
+                Assert.Equal("name", Convert.ToString(reader["columns"]));
+                break;
+            }
+        }
+        Assert.True(found, "系统表 _sys.indexes 中应包含新建的索引信息");
+
+        // 索引 .idx 文件应已创建（空表索引文件仅含文件头）
+        var idxFile = GetSecondaryIdxFilePath("emb_ddl_idx", "idx_emb_name");
+        Assert.True(File.Exists(idxFile), "二级索引 .idx 文件应在创建索引后存在");
+        Assert.True(new FileInfo(idxFile).Length >= FileHeader.HeaderSize, "索引文件应至少包含文件头");
+
+        // 验证索引文件头
+        var idxHeader = ReadFileHeader(idxFile);
+        Assert.Equal(FileType.Index, idxHeader.FileType);
     }
 
     [Fact(DisplayName = "嵌入式-删除索引")]
@@ -188,9 +281,40 @@ public class EmbeddedIntegrationTests : IDisposable
         cmd.CommandText = "CREATE INDEX idx_emb_dropname ON emb_ddl_dropidx (name)";
         cmd.ExecuteNonQuery();
 
+        // 创建后索引文件和系统表记录应存在
+        var idxFile = GetSecondaryIdxFilePath("emb_ddl_dropidx", "idx_emb_dropname");
+        Assert.True(File.Exists(idxFile), "二级索引 .idx 文件应在创建索引后存在");
+
+        cmd.CommandText = "SELECT * FROM _sys.indexes WHERE table_name = 'emb_ddl_dropidx' AND index_name = 'idx_emb_dropname'";
+        using (var reader = cmd.ExecuteReader())
+        {
+            Assert.True(reader.Read(), "删除前系统表应包含该索引记录");
+        }
+
         cmd.CommandText = "DROP INDEX idx_emb_dropname ON emb_ddl_dropidx";
         var rows = cmd.ExecuteNonQuery();
         Assert.Equal(0, rows);
+
+        // 删除后索引文件应被移除
+        Assert.False(File.Exists(idxFile), "二级索引 .idx 文件应在删除索引后被删除");
+
+        // 删除后系统表不应再包含该索引
+        cmd.CommandText = "SELECT * FROM _sys.indexes";
+        using (var reader2 = cmd.ExecuteReader())
+        {
+            var foundAfter = false;
+            while (reader2.Read())
+            {
+                var tbl = Convert.ToString(reader2["table_name"]);
+                var idx = Convert.ToString(reader2["index_name"]);
+                if (tbl == "emb_ddl_dropidx" && idx == "idx_emb_dropname")
+                {
+                    foundAfter = true;
+                    break;
+                }
+            }
+            Assert.False(foundAfter, "删除索引后系统表不应再包含该索引记录");
+        }
     }
 
     #endregion
@@ -347,6 +471,99 @@ public class EmbeddedIntegrationTests : IDisposable
         cmd.CommandText = "SELECT COUNT(*) FROM emb_dml_del";
         var count = cmd.ExecuteScalar();
         Assert.Equal(1, Convert.ToInt32(count));
+    }
+
+    [Fact(DisplayName = "嵌入式-带索引表插入数据")]
+    public void InsertWithIndex()
+    {
+        using var conn = CreateConnection("Full");
+        using var cmd = conn.CreateCommand();
+
+        cmd.CommandText = "CREATE TABLE emb_dml_idx_ins (id INT PRIMARY KEY, name VARCHAR, amount INT)";
+        cmd.ExecuteNonQuery();
+
+        // 建表后创建索引
+        cmd.CommandText = "CREATE INDEX idx_ins_name ON emb_dml_idx_ins (name)";
+        cmd.ExecuteNonQuery();
+
+        // 索引文件应已创建（空表，仅文件头 + 空条目）
+        var idxFile = GetSecondaryIdxFilePath("emb_dml_idx_ins", "idx_ins_name");
+        Assert.True(File.Exists(idxFile), "索引 .idx 文件应在创建索引后存在");
+        var idxSizeEmpty = new FileInfo(idxFile).Length;
+
+        // 验证索引文件头
+        var idxHeader = ReadFileHeader(idxFile);
+        Assert.Equal(FileType.Index, idxHeader.FileType);
+        Assert.Equal(4096u, idxHeader.PageSize);
+
+        // 插入数据
+        cmd.CommandText = "INSERT INTO emb_dml_idx_ins VALUES (1, 'Alice', 1000), (2, 'Bob', 2000), (3, 'Charlie', 3000)";
+        var rows = cmd.ExecuteNonQuery();
+        Assert.Equal(3, rows);
+
+        // 插入后索引文件应增长
+        var idxSizeAfterInsert = new FileInfo(idxFile).Length;
+        Assert.True(idxSizeAfterInsert > idxSizeEmpty, "插入数据后索引 .idx 文件大小应增长");
+
+        // 重新读取文件头，确认格式正确
+        var idxHeaderAfter = ReadFileHeader(idxFile);
+        Assert.Equal(FileType.Index, idxHeaderAfter.FileType);
+
+        // 通过查询验证数据正确性
+        cmd.CommandText = "SELECT name, amount FROM emb_dml_idx_ins ORDER BY id ASC";
+        using var reader = cmd.ExecuteReader();
+        Assert.True(reader.Read());
+        Assert.Equal("Alice", reader.GetString(0));
+        Assert.Equal(1000, reader.GetInt32(1));
+        Assert.True(reader.Read());
+        Assert.Equal("Bob", reader.GetString(0));
+        Assert.True(reader.Read());
+        Assert.Equal("Charlie", reader.GetString(0));
+    }
+
+    [Fact(DisplayName = "嵌入式-带索引表删除数据索引收缩")]
+    public void IndexedTableDeleteShrinks()
+    {
+        using var conn = CreateConnection("Full");
+        using var cmd = conn.CreateCommand();
+
+        cmd.CommandText = "CREATE TABLE emb_dml_idx_del (id INT PRIMARY KEY, name VARCHAR, amount INT)";
+        cmd.ExecuteNonQuery();
+
+        cmd.CommandText = "CREATE INDEX idx_del_name ON emb_dml_idx_del (name)";
+        cmd.ExecuteNonQuery();
+
+        var idxFile = GetSecondaryIdxFilePath("emb_dml_idx_del", "idx_del_name");
+
+        // 插入 2 行
+        cmd.CommandText = "INSERT INTO emb_dml_idx_del VALUES (1, 'Alice', 1000), (2, 'Bob', 2000)";
+        cmd.ExecuteNonQuery();
+        var idxSizeAfter2 = new FileInfo(idxFile).Length;
+
+        // 再插入 2 行，索引文件应增长
+        cmd.CommandText = "INSERT INTO emb_dml_idx_del VALUES (3, 'Charlie', 3000), (4, 'David', 4000)";
+        cmd.ExecuteNonQuery();
+        var idxSizeAfter4 = new FileInfo(idxFile).Length;
+        Assert.True(idxSizeAfter4 > idxSizeAfter2, "再次插入数据后索引文件应继续增长");
+
+        // 查询验证数据完整
+        cmd.CommandText = "SELECT COUNT(*) FROM emb_dml_idx_del";
+        Assert.Equal(4, Convert.ToInt32(cmd.ExecuteScalar()));
+
+        // 删除 2 行，索引文件应收缩
+        cmd.CommandText = "DELETE FROM emb_dml_idx_del WHERE id >= 3";
+        Assert.Equal(2, cmd.ExecuteNonQuery());
+
+        var idxSizeAfterDelete = new FileInfo(idxFile).Length;
+        Assert.True(idxSizeAfterDelete < idxSizeAfter4, "删除数据后索引文件大小应减少");
+
+        // 验证数据一致性
+        cmd.CommandText = "SELECT COUNT(*) FROM emb_dml_idx_del";
+        Assert.Equal(2, Convert.ToInt32(cmd.ExecuteScalar()));
+
+        // 索引文件头仍然正确
+        var idxHeader = ReadFileHeader(idxFile);
+        Assert.Equal(FileType.Index, idxHeader.FileType);
     }
 
     #endregion
