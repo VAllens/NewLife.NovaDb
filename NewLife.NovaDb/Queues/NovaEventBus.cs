@@ -1,4 +1,4 @@
-using NewLife.Messaging;
+﻿using NewLife.Messaging;
 using NewLife.NovaDb.Engine.Flux;
 
 namespace NewLife.NovaDb.Queues;
@@ -11,12 +11,12 @@ public class NovaEventBus<TEvent> : EventBus<TEvent>
     private CancellationTokenSource? _cts;
 
     /// <summary>创建 NovaEventBus 实例</summary>
-    /// <param name="streamManager">流管理器</param>
+    /// <param name="engine">Flux 引擎实例</param>
     /// <param name="topic">事件主题</param>
     /// <param name="clientId">客户标识/消费组</param>
-    public NovaEventBus(StreamManager streamManager, String topic, String clientId = "")
+    public NovaEventBus(FluxEngine engine, String topic, String clientId = "")
     {
-        _queue = new NovaQueue<TEvent>(streamManager, topic);
+        _queue = new NovaQueue<TEvent>(engine, topic);
 
         // 如果指定了消费组，设置并启动后台消费
         if (!String.IsNullOrEmpty(clientId))

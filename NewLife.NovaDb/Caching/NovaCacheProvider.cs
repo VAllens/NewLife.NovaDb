@@ -1,5 +1,4 @@
-using NewLife.Caching;
-using NewLife.Log;
+﻿using NewLife.Caching;
 using NewLife.NovaDb.Client;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine.Flux;
@@ -11,23 +10,22 @@ namespace NewLife.NovaDb.Caching;
 /// <summary>Nova 缓存架构服务。提供基础缓存及队列服务</summary>
 /// <remarks>
 /// 参考 RedisCacheProvider 实现，根据连接字符串自动识别嵌入模式还是网络服务模式。
-/// 嵌入模式直接使用本地 KvStore/StreamManager 引擎；网络模式通过 NovaClient 远程操作。
+/// 嵌入模式直接使用本地 KvStore/FluxEngine 引擎；网络模式通过 NovaClient 远程操作。
 /// </remarks>
 public class NovaCacheProvider : CacheProvider
 {
     #region 属性
     private NovaCache? _novaCache;
-    private StreamManager? _streamManager;
+    private FluxEngine? _fluxEngine;
 
-    /// <summary>流管理器（队列功能）</summary>
-    public StreamManager? StreamManager
+    /// <summary>Flux 引擎（队列功能）</summary>
+    public FluxEngine? FluxEngine
     {
-        get => _streamManager;
+        get => _fluxEngine;
         set
         {
-            _streamManager = value;
-            if (_novaCache != null)
-                _novaCache.StreamManager = value;
+            _fluxEngine = value;
+            _novaCache?.FluxEngine = value;
         }
     }
     #endregion
@@ -38,14 +36,6 @@ public class NovaCacheProvider : CacheProvider
     public NovaCacheProvider(String connectionString)
     {
         Init(connectionString);
-    }
-
-    /// <summary>使用 NovaCache 实例创建 NovaCacheProvider</summary>
-    /// <param name="cache">NovaCache 实例</param>
-    public NovaCacheProvider(NovaCache cache)
-    {
-        _novaCache = cache ?? throw new ArgumentNullException(nameof(cache));
-        Cache = cache;
     }
     #endregion
 
@@ -58,19 +48,17 @@ public class NovaCacheProvider : CacheProvider
             throw new ArgumentNullException(nameof(connectionString));
 
         var csb = new NovaConnectionStringBuilder(connectionString);
-
         if (csb.IsEmbedded)
         {
             // 嵌入模式
             var dataSource = csb.DataSource!;
             var kvStore = new KvStore(null, dataSource);
 
-            // 创建流管理器用于队列功能
+            // 创建 Flux 引擎用于队列功能
             var mqPath = Path.Combine(dataSource, "mq");
-            var fluxEngine = new FluxEngine(mqPath, new DbOptions());
-            _streamManager = new StreamManager(fluxEngine);
+            _fluxEngine = new FluxEngine(mqPath, new DbOptions());
 
-            _novaCache = new NovaCache(kvStore) { StreamManager = _streamManager };
+            _novaCache = new NovaCache(kvStore) { FluxEngine = _fluxEngine };
             Cache = _novaCache;
         }
         else
@@ -95,9 +83,9 @@ public class NovaCacheProvider : CacheProvider
     /// <returns>队列实例</returns>
     public override IProducerConsumer<T> GetQueue<T>(String topic, String? group = null)
     {
-        if (_streamManager != null)
+        if (_fluxEngine != null)
         {
-            var queue = new NovaQueue<T>(_streamManager, topic);
+            var queue = new NovaQueue<T>(_fluxEngine, topic);
             if (!String.IsNullOrEmpty(group))
                 queue.SetGroup(group!);
             return queue;

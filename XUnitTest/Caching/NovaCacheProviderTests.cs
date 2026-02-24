@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using NewLife.NovaDb.Caching;
 using NewLife.NovaDb.Core;
@@ -59,7 +59,7 @@ public class NovaCacheProviderTests : IDisposable
         var connStr = $"Data Source={_testDir}";
         var provider = new NovaCacheProvider(connStr);
 
-        Assert.NotNull(provider.StreamManager);
+        Assert.NotNull(provider.FluxEngine);
 
         var queue = provider.GetQueue<String>("test-topic", "test-group");
         Assert.NotNull(queue);
@@ -77,16 +77,6 @@ public class NovaCacheProviderTests : IDisposable
 
         using var lockObj = provider.AcquireLock("test-lock", 5000);
         Assert.NotNull(lockObj);
-    }
-
-    [Fact(DisplayName = "测试通过NovaCache实例创建")]
-    public void TestCreateWithCache()
-    {
-        var kvStore = new KvStore();
-        var cache = new NovaCache(kvStore);
-        var provider = new NovaCacheProvider(cache);
-
-        Assert.Same(cache, provider.Cache);
     }
 
     [Fact(DisplayName = "测试InnerCache默认值")]

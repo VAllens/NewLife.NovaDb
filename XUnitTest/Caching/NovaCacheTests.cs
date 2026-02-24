@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -38,8 +38,7 @@ public class NovaCacheTests : IDisposable
         var kvStore = new KvStore(null, _testDir);
         var mqPath = Path.Combine(_testDir, "mq");
         var fluxEngine = new FluxEngine(mqPath, new DbOptions { FluxPartitionHours = 1 });
-        var streamManager = new StreamManager(fluxEngine);
-        return new NovaCache(kvStore) { StreamManager = streamManager };
+        return new NovaCache(kvStore) { FluxEngine = fluxEngine };
     }
 
     [Fact(DisplayName = "测试嵌入模式标识")]

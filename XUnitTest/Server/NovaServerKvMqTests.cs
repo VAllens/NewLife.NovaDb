@@ -39,11 +39,11 @@ public class NovaServerKvMqTests : IDisposable
     }
 
     [Fact(DisplayName = "服务器启动后消息队列可用")]
-    public void ServerStartInitializesStreamManager()
+    public void ServerStartInitializesFluxEngine()
     {
         _server.Start();
 
-        Assert.NotNull(_server.StreamManager);
+        Assert.NotNull(_server.FluxEngine);
     }
 
     [Fact(DisplayName = "服务器停止后KV存储释放")]
@@ -57,13 +57,13 @@ public class NovaServerKvMqTests : IDisposable
     }
 
     [Fact(DisplayName = "服务器停止后消息队列释放")]
-    public void ServerStopCleansStreamManager()
+    public void ServerStopCleansFluxEngine()
     {
         _server.Start();
-        Assert.NotNull(_server.StreamManager);
+        Assert.NotNull(_server.FluxEngine);
 
         _server.Stop();
-        Assert.Null(_server.StreamManager);
+        Assert.Null(_server.FluxEngine);
     }
 
     [Fact(DisplayName = "服务器注册了KV操作")]

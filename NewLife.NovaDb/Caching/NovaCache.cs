@@ -1,10 +1,8 @@
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.Text;
 using NewLife.Caching;
 using NewLife.Messaging;
 using NewLife.NovaDb.Client;
-using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine.Flux;
 using NewLife.NovaDb.Engine.KV;
 using NewLife.NovaDb.Queues;
@@ -22,16 +20,16 @@ public class NovaCache : Cache
     #region 属性
     private readonly KvStore? _kvStore;
     private readonly NovaClient? _client;
-    private StreamManager? _streamManager;
+    private FluxEngine? _fluxEngine;
 
     /// <summary>是否为嵌入模式</summary>
     public Boolean IsEmbedded => _kvStore != null;
 
-    /// <summary>流管理器（嵌入模式下可用于队列功能）</summary>
-    public StreamManager? StreamManager
+    /// <summary>Flux 引擎（嵌入模式下可用于队列功能）</summary>
+    public FluxEngine? FluxEngine
     {
-        get => _streamManager;
-        set => _streamManager = value;
+        get => _fluxEngine;
+        set => _fluxEngine = value;
     }
     #endregion
 
@@ -238,10 +236,10 @@ public class NovaCache : Cache
     /// <returns>队列实例</returns>
     public override IProducerConsumer<T> GetQueue<T>(String key)
     {
-        if (_streamManager == null)
-            throw new NotSupportedException("队列功能需要设置 StreamManager");
+        if (_fluxEngine == null)
+            throw new NotSupportedException("队列功能需要设置 FluxEngine");
 
-        return new NovaQueue<T>(_streamManager, key);
+        return new NovaQueue<T>(_fluxEngine, key);
     }
 
     /// <summary>创建事件总线</summary>
@@ -251,9 +249,9 @@ public class NovaCache : Cache
     /// <returns>事件总线实例</returns>
     public override IEventBus<TEvent> CreateEventBus<TEvent>(String topic, String clientId = "")
     {
-        if (_streamManager == null) return base.CreateEventBus<TEvent>(topic, clientId);
+        if (_fluxEngine == null) return base.CreateEventBus<TEvent>(topic, clientId);
 
-        return new NovaEventBus<TEvent>(_streamManager, topic, clientId);
+        return new NovaEventBus<TEvent>(_fluxEngine, topic, clientId);
     }
     #endregion
 

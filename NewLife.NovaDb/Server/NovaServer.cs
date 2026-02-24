@@ -19,7 +19,6 @@ public class NovaServer : DisposeBase
     private ReplicationManager? _replicationManager;
     private KvStore? _kvStore;
     private FluxEngine? _fluxEngine;
-    private StreamManager? _streamManager;
 
     /// <summary>端口</summary>
     public Int32 Port => _server?.Port ?? _port;
@@ -48,8 +47,8 @@ public class NovaServer : DisposeBase
     /// <summary>KV 存储引擎</summary>
     public KvStore? KvStore => _kvStore;
 
-    /// <summary>流管理器（消息队列）</summary>
-    public StreamManager? StreamManager => _streamManager;
+    /// <summary>Flux 时序引擎（消息队列）</summary>
+    public FluxEngine? FluxEngine => _fluxEngine;
 
     /// <summary>节点 ID，用于集群标识</summary>
     public String NodeId { get; set; } = Guid.NewGuid().ToString("N")[..8];
@@ -89,7 +88,6 @@ public class NovaServer : DisposeBase
         // 初始化消息队列引擎
         var mqPath = Path.Combine(dbPath, "mq");
         _fluxEngine = new FluxEngine(mqPath, dbOptions);
-        _streamManager = new StreamManager(_fluxEngine);
 
         // 初始化复制管理器（主节点模式）
         if (NodeRole == NodeRole.Master)
@@ -107,7 +105,7 @@ public class NovaServer : DisposeBase
         NovaController.SharedEngine = _sqlEngine;
         NovaController.SharedReplication = _replicationManager;
         KvController.SharedKvStore = _kvStore;
-        FluxController.SharedStreamManager = _streamManager;
+        FluxController.SharedEngine = _fluxEngine;
 
         var server = new ApiServer(_port)
         {
@@ -140,10 +138,8 @@ public class NovaServer : DisposeBase
         NovaController.SharedEngine = null;
         NovaController.SharedReplication = null;
         KvController.SharedKvStore = null;
-        FluxController.SharedStreamManager = null;
+        FluxController.Reset();
 
-        _streamManager?.Dispose();
-        _streamManager = null;
         _fluxEngine?.Dispose();
         _fluxEngine = null;
         _kvStore?.CloseKvLog();
@@ -171,10 +167,8 @@ public class NovaServer : DisposeBase
         NovaController.SharedEngine = null;
         NovaController.SharedReplication = null;
         KvController.SharedKvStore = null;
-        FluxController.SharedStreamManager = null;
+        FluxController.Reset();
 
-        _streamManager?.Dispose();
-        _streamManager = null;
         _fluxEngine?.Dispose();
         _fluxEngine = null;
         _kvStore?.CloseKvLog();
