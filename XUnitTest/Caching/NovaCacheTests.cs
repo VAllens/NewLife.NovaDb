@@ -35,7 +35,7 @@ public class NovaCacheTests : IDisposable
 
     private NovaCache CreateCache()
     {
-        var kvStore = new KvStore(null, _testDir);
+        var kvStore = new KvStore(null, Path.Combine(_testDir, "cache.kvd"));
         var mqPath = Path.Combine(_testDir, "mq");
         var fluxEngine = new FluxEngine(mqPath, new DbOptions { FluxPartitionHours = 1 });
         return new NovaCache(kvStore) { FluxEngine = fluxEngine };

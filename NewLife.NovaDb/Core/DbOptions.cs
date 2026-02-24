@@ -39,6 +39,9 @@ public class DbOptions
     /// <summary>KV 默认 TTL（未显式指定时使用）</summary>
     public TimeSpan DefaultKvTtl { get; set; } = TimeSpan.FromHours(24);
 
+    /// <summary>KV 自动压缩比率。当文件写入记录数 ÷ 存活键数 超过此比率时自动触发 Compact，0 表示禁用自动压缩。默认 5.0</summary>
+    public Double KvCompactRatio { get; set; } = 5.0;
+
     /// <summary>是否只读模式。只读模式下禁止所有写操作（DDL/DML），可跳过 WAL 初始化、关闭脏页刷盘，获得更高读取性能并避免多进程写冲突</summary>
     public Boolean ReadOnly { get; set; }
 }

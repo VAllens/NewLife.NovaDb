@@ -56,7 +56,7 @@ public class NovaCache : Cache
     public override Int32 Count => _kvStore?.Count ?? 0;
 
     /// <summary>所有缓存键集合</summary>
-    public override ICollection<String> Keys => _kvStore?.GetAllKeys() ?? [];
+    public override ICollection<String> Keys => _kvStore != null ? _kvStore.GetAllKeys().ToList() : [];
 
     /// <summary>检查缓存项是否存在</summary>
     /// <param name="key">键</param>
@@ -189,15 +189,7 @@ public class NovaCache : Cache
     /// <returns>更新后的值</returns>
     public override Double Increment(String key, Double value)
     {
-        // 通过字符串操作实现浮点递增
-        if (_kvStore != null)
-        {
-            var str = _kvStore.GetString(key);
-            var current = str != null ? Double.Parse(str, CultureInfo.InvariantCulture) : 0d;
-            var newValue = current + value;
-            _kvStore.SetString(key, newValue.ToString("R", CultureInfo.InvariantCulture));
-            return newValue;
-        }
+        if (_kvStore != null) return _kvStore.IncDouble(key, value);
         return 0;
     }
 

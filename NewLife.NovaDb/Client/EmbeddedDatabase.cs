@@ -63,7 +63,7 @@ internal sealed class EmbeddedDatabase
     {
         return _kvStores.GetOrAdd(tableName, name =>
         {
-            var kvPath = Path.Combine(_dbPath, name);
+            var kvPath = Path.Combine(_dbPath, $"{name}.kvd");
             return new KvStore(_options, kvPath);
         });
     }

@@ -1,278 +1,557 @@
+﻿using System.Buffers;
+using System.IO.MemoryMappedFiles;
 using System.Text;
+using NewLife.Buffers;
+using NewLife.Data;
+using NewLife.NovaDb.Core;
+using NewLife.NovaDb.Storage;
 using NewLife.Security;
 
 namespace NewLife.NovaDb.Engine.KV;
 
+/// <summary>KV 存储记录类型</summary>
+enum KvRecordType : Byte
+{
+    /// <summary>设置键值对</summary>
+    Set = 1,
+
+    /// <summary>删除键</summary>
+    Delete = 2,
+
+    /// <summary>清空所有数据</summary>
+    Clear = 3,
+}
+
 /// <summary>KvStore 数据持久化逻辑</summary>
 /// <remarks>
-/// 采用 Append-Only Log (AOF) 方式持久化 KV 数据。
-/// 每次 Set/Add/Inc 写入一条 KvSet 记录，Delete 写入一条 KvDel 记录。
-/// 启动时顺序回放所有记录，重建内存 Dictionary。
-/// 
-/// 记录格式：
-/// [RecordLength: 4B] [RecordType: 1B] [Data: variable] [Checksum: 4B]
-/// 
-/// KvSet Data = [KeyLen: 4B] [Key: UTF-8] [HasExpiry: 1B] [ExpiresAt: 8B (可选)] [ValueLen: 4B] [Value]
-/// KvDel Data = [KeyLen: 4B] [Key: UTF-8]
+/// <para>每个 KV 表对应一个 .kvd 文件，格式为 32 字节文件头 + 顺序追加的记录。</para>
+/// <para>文件版本 3，ExpiresAt 始终写入，移除 Flags 字节。</para>
+/// <para>Set 记录: [TotalLength: 4B] [RecordType: 1B] [KeyLen: 2B] [Key: UTF-8] [ExpiresAt: 8B] [ValueLen: 4B] [Value?] [CRC32: 4B]</para>
+/// <para>Delete 记录: [TotalLength: 4B] [RecordType: 1B] [KeyLen: 2B] [Key: UTF-8] [CRC32: 4B]</para>
+/// <para>Clear 记录: [TotalLength: 4B] [RecordType: 1B] [CRC32: 4B]</para>
+/// <para></para>
+/// <para>Bitcask 模型：内存仅保存键到文件偏移的索引（KvEntry），值留在磁盘按需读取。</para>
+/// <para>启动恢复时扫描数据文件重建内存索引，不加载值数据，内存占用极低。</para>
+/// <para>WAL 模式控制刷盘策略：Full=每次刷盘，Normal=定时刷盘（1秒），None=不主动刷盘。</para>
 /// </remarks>
 public partial class KvStore
 {
-    private const Byte RecordType_KvSet = 1;
-    private const Byte RecordType_KvDel = 2;
+    private const Int32 FileHeaderSize = FileHeader.HeaderSize;
+    private const Byte FileVersion = 3;
 
-    private static readonly Byte[] KvLogMagic = [(Byte)'N', (Byte)'K', (Byte)'V', (Byte)'L'];
-    private const Int32 KvLogHeaderSize = 32;
-
-    private FileStream? _kvLogStream;
+    private FileStream? _fileStream;
+    private Timer? _flushTimer;
+    private volatile Boolean _needsFlush;
+    private Int64 _writeCount;              // 从启动或上次 Compact 以来的写入记录数（Set/Delete/Clear）
+    private volatile Boolean _compacting;   // 正在执行 Compact，避免重入
 
     #region 文件管理
-
-    /// <summary>获取 KV 日志文件路径</summary>
-    private String GetKvLogPath() => Path.Combine(_storePath!, "kv.rlog");
-
-    /// <summary>打开 KV 日志文件</summary>
-    private void OpenKvLog()
+    /// <summary>打开数据文件，恢复索引</summary>
+    private void OpenDataFile()
     {
-        if (String.IsNullOrEmpty(_storePath)) return;
+        // 确保目录存在
+        var dir = Path.GetDirectoryName(_filePath);
+        if (!String.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
 
-        if (!Directory.Exists(_storePath))
-            Directory.CreateDirectory(_storePath);
+        var isNew = !File.Exists(_filePath) || new FileInfo(_filePath).Length < FileHeaderSize;
 
-        var path = GetKvLogPath();
-        var isNew = !File.Exists(path) || new FileInfo(path).Length < KvLogHeaderSize;
-
-        _kvLogStream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+        _fileStream = new FileStream(_filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite, 4096, FileOptions.SequentialScan);
 
         if (isNew)
         {
-            WriteKvLogHeader();
+            WriteFileHeader();
         }
         else
         {
-            ValidateKvLogHeader();
-            LoadFromKvLog();
+            ValidateFileHeader();
+            LoadFromFile();
+        }
+
+        // Normal 模式下启动定时刷盘
+        var walMode = _options?.WalMode ?? WalMode.Normal;
+        if (walMode == WalMode.Normal)
+        {
+            _flushTimer = new Timer(FlushTimerCallback, null, 1000, 1000);
         }
     }
 
-    /// <summary>写入文件头</summary>
-    private void WriteKvLogHeader()
+    /// <summary>写入文件头（32 字节），使用统一的 FileHeader 结构</summary>
+    private void WriteFileHeader()
     {
-        var header = new Byte[KvLogHeaderSize];
-        Array.Copy(KvLogMagic, 0, header, 0, 4);
-        header[4] = 1; // Version
+        var header = new FileHeader
+        {
+            Version = FileVersion,
+            FileType = FileType.KvData,
+            PageSize = 1,
+            CreateTime = DateTime.UtcNow,
+        };
 
-        _kvLogStream!.Position = 0;
-        _kvLogStream.Write(header, 0, header.Length);
-        _kvLogStream.Flush();
+        var buf = new Byte[FileHeaderSize];
+        header.Write(buf);
+
+        _fileStream!.Position = 0;
+        _fileStream.Write(buf, 0, buf.Length);
+        _fileStream.Flush();
     }
 
-    /// <summary>校验文件头</summary>
-    private void ValidateKvLogHeader()
+    /// <summary>校验文件头，使用 FileHeader 统一校验 Magic/CRC</summary>
+    private void ValidateFileHeader()
     {
-        if (_kvLogStream!.Length < KvLogHeaderSize) return;
+        if (_fileStream!.Length < FileHeaderSize) return;
 
-        _kvLogStream.Position = 0;
-        var header = new Byte[KvLogHeaderSize];
-        if (_kvLogStream.Read(header, 0, header.Length) < KvLogHeaderSize) return;
+        _fileStream.Position = 0;
+        var buf = new Byte[FileHeaderSize];
+        if (_fileStream.Read(buf, 0, buf.Length) < FileHeaderSize) return;
 
-        if (header[0] != KvLogMagic[0] || header[1] != KvLogMagic[1] ||
-            header[2] != KvLogMagic[2] || header[3] != KvLogMagic[3])
-            throw new InvalidOperationException("Invalid KV log file header");
+        var header = FileHeader.Read(buf);
+        if (header.FileType != FileType.KvData)
+            throw new InvalidOperationException($"无效的 KV 数据文件类型: {header.FileType}, 路径: {_filePath}");
     }
 
+    /// <summary>关闭数据文件，释放资源</summary>
+    private void CloseDataFile()
+    {
+        _flushTimer?.Dispose();
+        _flushTimer = null;
+
+        if (_fileStream != null)
+        {
+            try { _fileStream.Flush(); } catch { }
+            _fileStream.Dispose();
+            _fileStream = null;
+        }
+    }
+
+    /// <summary>定时刷盘回调（Normal 模式）</summary>
+    private void FlushTimerCallback(Object? state)
+    {
+        if (!_needsFlush || _fileStream == null) return;
+
+        try
+        {
+            _fileStream.Flush(true);
+            _needsFlush = false;
+        }
+        catch { }
+    }
     #endregion
 
     #region 持久化写入
-
-    /// <summary>持久化 Set 记录</summary>
+    /// <summary>写入 Set 记录到文件，使用 ArrayPool 借出数组 + SpanWriter 填充。调用方需持有 _writeLock</summary>
     /// <param name="key">键</param>
-    /// <param name="value">值</param>
-    /// <param name="expiresAt">过期时间</param>
-    private void PersistKvSet(String key, Byte[]? value, DateTime? expiresAt)
+    /// <param name="value">值，最少为空数组，不能为 null</param>
+    /// <param name="expiresAt">过期时间（UTC）</param>
+    /// <param name="autoFlush">是否按 WAL 模式自动刷盘</param>
+    /// <returns>值在文件中的偏移（若值为空则返回 -1）</returns>
+    private Int64 WriteSetRecordNoLock(String key, Byte[] value, DateTime expiresAt, Boolean autoFlush = true)
     {
-        if (_kvLogStream == null) return;
+        if (value == null) throw new ArgumentNullException(nameof(value));
 
-        using var ms = new MemoryStream();
-        using var bw = new BinaryWriter(ms);
-
-        // Key
-        var keyBytes = Encoding.UTF8.GetBytes(key);
-        bw.Write(keyBytes.Length);
-        bw.Write(keyBytes);
-
-        // 过期时间
-        if (expiresAt.HasValue)
-        {
-            bw.Write((Byte)1);
-            bw.Write(expiresAt.Value.Ticks);
-        }
-        else
-        {
-            bw.Write((Byte)0);
-        }
-
-        // Value
-        var valueBytes = value ?? [];
-        bw.Write(valueBytes.Length);
-        bw.Write(valueBytes);
-
-        WriteKvRecord(RecordType_KvSet, ms.ToArray());
+        var valueOffset = WriteSetRecordToStream(_fileStream!, key, value, expiresAt);
+        _writeCount++;
+        if (autoFlush) FlushByWalMode();
+        return valueOffset;
     }
 
-    /// <summary>持久化 Delete 记录</summary>
+    /// <summary>向指定流写入 Set 记录，供普通写入和 Compact 共用</summary>
+    /// <param name="target">目标文件流，写入位置定位到末尾</param>
     /// <param name="key">键</param>
-    private void PersistKvDelete(String key)
+    /// <param name="value">值，最少为空数组，不能为 null</param>
+    /// <param name="expiresAt">过期时间（UTC）</param>
+    /// <returns>值在文件中的偏移（若值为空则返回 -1）</returns>
+    private static Int64 WriteSetRecordToStream(FileStream target, String key, Byte[] value, DateTime expiresAt)
     {
-        if (_kvLogStream == null) return;
-
-        using var ms = new MemoryStream();
-        using var bw = new BinaryWriter(ms);
-
         var keyBytes = Encoding.UTF8.GetBytes(key);
-        bw.Write(keyBytes.Length);
-        bw.Write(keyBytes);
+        var valueLen = value.Length;
 
-        WriteKvRecord(RecordType_KvDel, ms.ToArray());
+        // Record: [TotalLength: 4B] [RecordType: 1B] [KeyLen: 2B] [Key] [ExpiresAt: 8B] [ValueLen: 4B] [Value] [CRC32: 4B]
+        var totalLength = 1 + 2 + keyBytes.Length + 8 + 4 + valueLen + 4;
+        var recordSize = 4 + totalLength;
+
+        var buf = ArrayPool<Byte>.Shared.Rent(recordSize);
+        try
+        {
+            var writer = new SpanWriter(buf, 0, recordSize);
+
+            writer.Write(totalLength);
+            writer.Write((Byte)KvRecordType.Set);
+            writer.Write((UInt16)keyBytes.Length);
+            writer.Write(keyBytes);
+            writer.Write(expiresAt.Ticks);
+            writer.Write(valueLen);
+            writer.Write(value);
+
+            // CRC32 覆盖 [RecordType..Value]
+            var crc = Crc32.Compute(buf, 4, totalLength - 4);
+            writer.Write(crc);
+
+            var recordStart = target.Length;
+            target.Position = recordStart;
+            target.Write(buf, 0, recordSize);
+
+            // 计算值在文件中的偏移: recordStart + 4(TotalLen) + 1(Type) + 2(KeyLen) + key + 8(ExpiresAt) + 4(ValueLen)
+            return valueLen > 0 ? recordStart + 4 + 1 + 2 + keyBytes.Length + 8 + 4 : -1L;
+        }
+        finally
+        {
+            ArrayPool<Byte>.Shared.Return(buf);
+        }
     }
 
-    /// <summary>写入一条记录</summary>
-    private void WriteKvRecord(Byte recordType, Byte[] data)
+    /// <summary>写入 Delete 记录到文件，使用 ArrayPool 借出数组。调用方需持有 _writeLock</summary>
+    /// <param name="key">键</param>
+    private void WriteDeleteRecordNoLock(String key)
     {
-        var recordLength = 1 + data.Length + 4;
+        var keyBytes = Encoding.UTF8.GetBytes(key);
 
-        using var ms = new MemoryStream(4 + recordLength);
-        using var bw = new BinaryWriter(ms);
+        // Delete: [TotalLength: 4B] [RecordType: 1B] [KeyLen: 2B] [Key] [CRC32: 4B]
+        var totalLength = 1 + 2 + keyBytes.Length + 4;
+        var recordSize = 4 + totalLength;
 
-        bw.Write(recordLength);
-        bw.Write(recordType);
-        bw.Write(data);
+        var buf = ArrayPool<Byte>.Shared.Rent(recordSize);
+        try
+        {
+            var writer = new SpanWriter(buf, 0, recordSize);
 
-        // CRC32 校验
-        var checkBuffer = new Byte[1 + data.Length];
-        checkBuffer[0] = recordType;
-        Array.Copy(data, 0, checkBuffer, 1, data.Length);
-        var checksum = Crc32.Compute(checkBuffer, 0, checkBuffer.Length);
-        bw.Write(checksum);
+            writer.Write(totalLength);
+            writer.Write((Byte)KvRecordType.Delete);
+            writer.Write((UInt16)keyBytes.Length);
+            writer.Write(keyBytes);
 
-        var buffer = ms.ToArray();
-        _kvLogStream!.Position = _kvLogStream.Length;
-        _kvLogStream.Write(buffer, 0, buffer.Length);
-        _kvLogStream.Flush();
+            var crc = Crc32.Compute(buf, 4, totalLength - 4);
+            writer.Write(crc);
+
+            _fileStream!.Position = _fileStream.Length;
+            _fileStream.Write(buf, 0, recordSize);
+        }
+        finally
+        {
+            ArrayPool<Byte>.Shared.Return(buf);
+        }
+
+        _writeCount++;
+        FlushByWalMode();
     }
 
+    /// <summary>写入 Clear 记录到文件，使用 ArrayPool 借出数组。调用方需持有 _writeLock</summary>
+    private void WriteClearRecordNoLock()
+    {
+        // Clear: [TotalLength=5: 4B] [RecordType=Clear: 1B] [CRC32: 4B] = 9 bytes
+        const Int32 recordSize = 9;
+        var buf = ArrayPool<Byte>.Shared.Rent(recordSize);
+        try
+        {
+            var writer = new SpanWriter(buf, 0, recordSize);
+
+            writer.Write(5);
+            writer.Write((Byte)KvRecordType.Clear);
+
+            var crc = Crc32.Compute(buf, 4, 1);
+            writer.Write(crc);
+
+            _fileStream!.Position = _fileStream.Length;
+            _fileStream.Write(buf, 0, recordSize);
+        }
+        finally
+        {
+            ArrayPool<Byte>.Shared.Return(buf);
+        }
+
+        _writeCount++;
+        FlushByWalMode();
+    }
+
+    /// <summary>按 WAL 模式决定刷盘策略</summary>
+    private void FlushByWalMode()
+    {
+        var walMode = _options?.WalMode ?? WalMode.Normal;
+        if (walMode == WalMode.Full)
+            _fileStream!.Flush(true);
+        else if (walMode == WalMode.Normal)
+            _needsFlush = true;
+        // None 模式：不主动刷盘
+    }
+    #endregion
+
+    #region 磁盘读取
+    /// <summary>从磁盘读取值数据，返回池化数据包（调用方需持有 _writeLock）</summary>
+    /// <param name="index">索引条目</param>
+    /// <returns>池化数据包，null 表示存储的值为 null。调用方用完后需 Dispose 归还到池中</returns>
+    private IOwnerPacket? ReadValueFromDiskNoLock(KvEntry index)
+    {
+        if (index.ValueLength <= 0) return null;
+
+        var pk = new OwnerPacket(index.ValueLength);
+        _fileStream!.Position = index.ValueOffset;
+        var bytesRead = _fileStream.Read(pk.Buffer, pk.Offset, index.ValueLength);
+        if (bytesRead < index.ValueLength)
+            throw new InvalidOperationException("KV 数据文件损坏：无法读取完整值数据");
+
+        return pk;
+    }
     #endregion
 
     #region 启动恢复
-
-    /// <summary>从日志文件恢复数据</summary>
-    private void LoadFromKvLog()
+    /// <summary>从数据文件恢复索引。优先使用 MemoryMappedFile 加速大文件读取</summary>
+    private void LoadFromFile()
     {
-        if (_kvLogStream == null) return;
+        if (_fileStream == null) return;
 
-        _kvLogStream.Position = KvLogHeaderSize;
+        var fileLength = _fileStream.Length;
+        if (fileLength <= FileHeaderSize) return;
 
-        while (_kvLogStream.Position < _kvLogStream.Length)
+        // 对大于 64KB 的文件使用 MMF 加速读取
+        if (fileLength > 65536)
         {
-            var lenBuf = new Byte[4];
-            if (_kvLogStream.Read(lenBuf, 0, 4) < 4) break;
-            var recordLength = BitConverter.ToInt32(lenBuf, 0);
-            if (recordLength < 5) break;
-
-            var body = new Byte[recordLength];
-            if (_kvLogStream.Read(body, 0, recordLength) < recordLength) break;
-
-            var recordType = body[0];
-            var dataLength = recordLength - 1 - 4;
-            if (dataLength < 0) break;
-
-            // 校验 CRC32
-            var expectedChecksum = BitConverter.ToUInt32(body, recordLength - 4);
-            var actualChecksum = Crc32.Compute(body, 0, 1 + dataLength);
-            if (expectedChecksum != actualChecksum) continue;
-
-            if (recordType == RecordType_KvSet && dataLength >= 4)
-            {
-                ReplayKvSet(body, 1, dataLength);
-            }
-            else if (recordType == RecordType_KvDel && dataLength >= 4)
-            {
-                ReplayKvDel(body, 1, dataLength);
-            }
+            LoadFromFileMmf(fileLength);
+        }
+        else
+        {
+            LoadFromFileStream();
         }
     }
 
-    /// <summary>回放 Set 记录</summary>
-    private void ReplayKvSet(Byte[] body, Int32 offset, Int32 dataLength)
+    /// <summary>通过 MemoryMappedFile 快速恢复大文件</summary>
+    private void LoadFromFileMmf(Int64 fileLength)
     {
-        using var ms = new MemoryStream(body, offset, dataLength);
-        using var br = new BinaryReader(ms);
+        // 关闭当前文件流，MMF 需要独占打开文件
+        _fileStream!.Flush();
+        _fileStream.Dispose();
+        _fileStream = null;
 
-        var keyLen = br.ReadInt32();
-        var keyBytes = br.ReadBytes(keyLen);
-        var key = Encoding.UTF8.GetString(keyBytes);
+        try
+        {
+            // 使用文件路径创建 MMF，兼容 .NET Framework 4.5+ 和 .NET Core/5+
+            using var mmf = MemoryMappedFile.CreateFromFile(_filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+            using var accessor = mmf.CreateViewAccessor(0, fileLength, MemoryMappedFileAccess.Read);
 
-        var hasExpiry = br.ReadByte();
-        DateTime? expiresAt = null;
-        if (hasExpiry == 1)
-            expiresAt = new DateTime(br.ReadInt64(), DateTimeKind.Utc);
+            var pos = (Int64)FileHeaderSize;
+            while (pos + 8 < fileLength) // 至少需要 4B(长度) + 1B(类型) + 4B(CRC)
+            {
+                var totalLength = accessor.ReadInt32(pos);
+                if (totalLength < 5 || pos + 4 + totalLength > fileLength) break;
 
-        var valueLen = br.ReadInt32();
-        var value = br.ReadBytes(valueLen);
+                // 读取完整记录体
+                var body = new Byte[totalLength];
+                accessor.ReadArray(pos + 4, body, 0, totalLength);
 
-        // 过期的 key 不加载
-        if (expiresAt.HasValue && DateTime.UtcNow >= expiresAt.Value) return;
+                ReplayRecord(body, totalLength, pos);
+
+                pos += 4 + totalLength;
+            }
+        }
+        finally
+        {
+            // 恢复完成后重新打开文件流，供后续写入使用
+            _fileStream = new FileStream(_filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite, 4096, FileOptions.SequentialScan);
+            _fileStream.Position = _fileStream.Length;
+        }
+    }
+
+    /// <summary>通过 FileStream 恢复小文件</summary>
+    private void LoadFromFileStream()
+    {
+        _fileStream!.Position = FileHeaderSize;
+
+        while (_fileStream.Position < _fileStream.Length)
+        {
+            var recordStart = _fileStream.Position;
+
+            var lenBuf = new Byte[4];
+            if (_fileStream.Read(lenBuf, 0, 4) < 4) break;
+            var totalLength = BitConverter.ToInt32(lenBuf, 0);
+            if (totalLength < 5) break;
+
+            var body = new Byte[totalLength];
+            if (_fileStream.Read(body, 0, totalLength) < totalLength) break;
+
+            ReplayRecord(body, totalLength, recordStart);
+        }
+    }
+
+    /// <summary>回放一条记录</summary>
+    /// <param name="body">记录体（不含 TotalLength 前缀）</param>
+    /// <param name="totalLength">记录总长度</param>
+    /// <param name="recordFileOffset">记录在文件中的起始位置（TotalLength 字段所在位置）</param>
+    private void ReplayRecord(Byte[] body, Int32 totalLength, Int64 recordFileOffset)
+    {
+        var recordType = (KvRecordType)body[0];
+        var dataLength = totalLength - 1 - 4;
+        if (dataLength < 0) return;
+
+        // 校验 CRC32
+        var expectedChecksum = BitConverter.ToUInt32(body, totalLength - 4);
+        var actualChecksum = Crc32.Compute(body, 0, 1 + dataLength);
+        if (expectedChecksum != actualChecksum) return;
+
+        switch (recordType)
+        {
+            case KvRecordType.Set:
+                ReplaySet(body, 1, dataLength, recordFileOffset);
+                break;
+            case KvRecordType.Delete:
+                ReplayDelete(body, 1, dataLength);
+                break;
+            case KvRecordType.Clear:
+                _data.Clear();
+                break;
+        }
+    }
+
+    /// <summary>回放 Set 记录，重建内存索引（值留在磁盘）。跳过已过期的键以避免加载浪费内存</summary>
+    /// <param name="body">记录体</param>
+    /// <param name="offset">数据起始偏移</param>
+    /// <param name="dataLength">数据长度</param>
+    /// <param name="recordFileOffset">记录在文件中的起始位置</param>
+    private void ReplaySet(Byte[] body, Int32 offset, Int32 dataLength, Int64 recordFileOffset)
+    {
+        var reader = new SpanReader(body, offset, dataLength);
+
+        var keyLen = reader.ReadUInt16();
+        var key = reader.ReadString(keyLen);
+
+        var expiresAt = new DateTime(reader.ReadInt64(), DateTimeKind.Utc);
+        var valueLen = reader.ReadInt32();
+
+        // 过期的 key 不加载到内存索引中，避免浪费内存
+        if (expiresAt < DateTime.MaxValue && DateTime.UtcNow >= expiresAt) return;
+
+        // 计算值在文件中的偏移: recordStart + 4(TotalLen) + 1(Type) + 2(KeyLen) + keyLen + 8(ExpiresAt) + 4(ValueLen)
+        var valueOffset = valueLen > 0 ? recordFileOffset + 4 + 1 + 2 + keyLen + 8 + 4 : -1L;
 
         _data[key] = new KvEntry
         {
-            Key = key,
-            Value = value,
+            ValueOffset = valueOffset,
+            ValueLength = valueLen,
             ExpiresAt = expiresAt,
-            CreatedAt = DateTime.UtcNow,
-            ModifiedAt = DateTime.UtcNow,
         };
     }
 
     /// <summary>回放 Delete 记录</summary>
-    private void ReplayKvDel(Byte[] body, Int32 offset, Int32 dataLength)
+    /// <param name="body">记录体</param>
+    /// <param name="offset">数据起始偏移</param>
+    /// <param name="dataLength">数据长度</param>
+    private void ReplayDelete(Byte[] body, Int32 offset, Int32 dataLength)
     {
-        using var ms = new MemoryStream(body, offset, dataLength);
-        using var br = new BinaryReader(ms);
+        var reader = new SpanReader(body, offset, dataLength);
 
-        var keyLen = br.ReadInt32();
-        var keyBytes = br.ReadBytes(keyLen);
-        var key = Encoding.UTF8.GetString(keyBytes);
+        var keyLen = reader.ReadUInt16();
+        var key = reader.ReadString(keyLen);
 
-        _data.Remove(key);
+        _data.TryRemove(key, out _);
     }
+    #endregion
 
-    /// <summary>压缩 KV 日志（重写仅包含存活键的日志）</summary>
-    public void CompactKvLog()
+    #region 压缩与维护
+    /// <summary>尝试自动压缩。当写入记录数与存活键数的比值超过 KvCompactRatio 时触发 Compact。调用方需已持有 _writeLock</summary>
+    private void TryAutoCompactNoLock()
     {
-        if (_kvLogStream == null) return;
+        if (_compacting) return;
 
-        lock (_lock)
+        var ratio = _options?.KvCompactRatio ?? 0;
+        if (ratio <= 0) return;
+
+        // 存活键数不足 100 时不触发，避免小数据量时频繁压缩
+        var aliveCount = _data.Count;
+        if (aliveCount < 100) return;
+
+        // 写入记录数 ÷ 存活键数 > 比率阈值 时执行压缩
+        if ((Double)_writeCount / aliveCount > ratio)
         {
-            _kvLogStream.SetLength(KvLogHeaderSize);
-            _kvLogStream.Position = KvLogHeaderSize;
-
-            foreach (var entry in _data.Values)
-            {
-                if (!entry.IsExpired())
-                {
-                    PersistKvSet(entry.Key, entry.Value, entry.ExpiresAt);
-                }
-            }
-
-            _kvLogStream.Flush();
+            CompactNoLock();
         }
     }
 
-    /// <summary>关闭 KV 日志文件</summary>
-    internal void CloseKvLog()
+    /// <summary>压缩数据文件，将存活键逐条写入临时文件后替换原文件，同时重建内存索引。避免一次性加载全部值到内存，适合较大文件场景</summary>
+    public void Compact()
     {
-        _kvLogStream?.Dispose();
-        _kvLogStream = null;
+        CheckDisposed();
+
+        lock (_writeLock)
+        {
+            CompactNoLock();
+        }
     }
 
+    /// <summary>压缩数据文件的内部实现，调用方需持有 _writeLock</summary>
+    private void CompactNoLock()
+    {
+        _compacting = true;
+        try
+        {
+            var tempPath = _filePath + ".compact.tmp";
+
+            // 新索引，记录写入临时文件后各键的偏移信息
+            var newEntries = new Dictionary<String, KvEntry>(StringComparer.Ordinal);
+
+            try
+            {
+                // 逐条从旧文件读取存活条目并写入临时文件，每次仅一条记录在内存中
+                using var tempStream = new FileStream(tempPath, FileMode.Create, FileAccess.ReadWrite, FileShare.None, 4096, FileOptions.SequentialScan);
+
+                // 写入文件头
+                var header = new FileHeader
+                {
+                    Version = FileVersion,
+                    FileType = FileType.KvData,
+                    PageSize = 1,
+                    CreateTime = DateTime.UtcNow,
+                };
+                var headerBuf = new Byte[FileHeaderSize];
+                header.Write(headerBuf);
+                tempStream.Write(headerBuf, 0, headerBuf.Length);
+
+                foreach (var kvp in _data)
+                {
+                    if (kvp.Value.IsExpired()) continue;
+
+                    using var pk = ReadValueFromDiskNoLock(kvp.Value);
+                    var value = pk != null ? pk.GetSpan().ToArray() : [];
+
+                    var valueOffset = WriteSetRecordToStream(tempStream, kvp.Key, value, kvp.Value.ExpiresAt);
+                    newEntries[kvp.Key] = new KvEntry
+                    {
+                        ValueOffset = valueOffset,
+                        ValueLength = value.Length,
+                        ExpiresAt = kvp.Value.ExpiresAt,
+                    };
+                }
+
+                tempStream.Flush(true);
+            }
+            catch
+            {
+                // 写入失败时清理临时文件，保留原文件不受影响
+                try { File.Delete(tempPath); } catch { }
+                throw;
+            }
+
+            // 关闭旧文件流后用临时文件替换
+            _fileStream!.Dispose();
+            _fileStream = null;
+
+            File.Delete(_filePath);
+            File.Move(tempPath, _filePath);
+
+            // 重新打开文件流，定位到末尾供后续追加写入
+            _fileStream = new FileStream(_filePath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite, 4096, FileOptions.SequentialScan);
+            _fileStream.Position = _fileStream.Length;
+
+            // 更新内存索引
+            _data.Clear();
+            foreach (var kvp in newEntries)
+            {
+                _data[kvp.Key] = kvp.Value;
+            }
+
+            // 压缩完成后重置写入计数
+            _writeCount = 0;
+        }
+        finally
+        {
+            _compacting = false;
+        }
+    }
     #endregion
 }

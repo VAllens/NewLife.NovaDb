@@ -1,49 +1,94 @@
+﻿using System.Collections.Concurrent;
 using System.Text;
+using NewLife;
+using NewLife.Buffers;
+using NewLife.Data;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Engine.KV;
 
-/// <summary>KV 键值存储引擎，支持按行 TTL</summary>
-public partial class KvStore
+/// <summary>KV 键值存储引擎。每个实例对应一个 .kvd 数据文件</summary>
+/// <remarks>
+/// <para>采用 Bitcask 模型：内存仅保存键到文件偏移的索引（KvEntry），值保留在磁盘按需读取。</para>
+/// <para>每个索引项约 20 字节，百万级键仅占约 20MB 内存，不受值大小影响。</para>
+/// <para>索引通过 ConcurrentDictionary 实现无锁并发查询，所有文件 IO 通过 _writeLock 串行化。</para>
+/// <para>持久化采用顺序追加写入 + CRC32 校验，启动时通过 MemoryMappedFile 快速扫描重建索引。</para>
+/// <para>支持 WAL 模式控制刷盘策略：Full(每次写入刷盘)、Normal(定时刷盘)、None(不刷盘)。</para>
+/// </remarks>
+public partial class KvStore : IDisposable
 {
-    private readonly Dictionary<String, KvEntry> _data = new(StringComparer.Ordinal);
-    private readonly Object _lock = new();
+    #region 属性
+    private readonly ConcurrentDictionary<String, KvEntry> _data = new(StringComparer.Ordinal);
+    private readonly Object _writeLock = new();
     private readonly DbOptions? _options;
-    private readonly TimeSpan _defaultTtl;
-    private readonly String? _storePath;
+    private readonly TimeSpan? _defaultTtl;
+    private readonly String _filePath;
+    private Boolean _disposed;
 
     /// <summary>非过期键的数量</summary>
     public Int32 Count
     {
         get
         {
-            lock (_lock)
+            var count = 0;
+            foreach (var index in _data.Values)
             {
-                var count = 0;
-                foreach (var entry in _data.Values)
-                {
-                    if (!entry.IsExpired())
-                        count++;
-                }
-                return count;
+                if (!index.IsExpired())
+                    count++;
             }
+            return count;
         }
     }
 
+    /// <summary>数据文件路径</summary>
+    public String FilePath => _filePath;
+    #endregion
+
+    #region 构造
     /// <summary>创建 KvStore 实例</summary>
     /// <param name="options">数据库选项，可为 null</param>
-    /// <param name="storePath">持久化存储目录路径，null 表示纯内存模式</param>
-    public KvStore(DbOptions? options = null, String? storePath = null)
+    /// <param name="filePath">数据文件路径（.kvd 文件）</param>
+    public KvStore(DbOptions? options, String filePath)
     {
-        _options = options;
-        _defaultTtl = options?.DefaultKvTtl ?? TimeSpan.Zero;
-        _storePath = storePath;
+        if (String.IsNullOrEmpty(filePath)) throw new ArgumentException("文件路径不能为空", nameof(filePath));
 
-        // 如果提供了存储路径，打开日志并恢复数据
-        if (!String.IsNullOrEmpty(_storePath))
-            OpenKvLog();
+        _options = options;
+        _defaultTtl = options?.DefaultKvTtl;
+        _filePath = filePath;
+
+        OpenDataFile();
+    }
+    #endregion
+
+    #region 释放
+    /// <summary>检查是否已释放</summary>
+    private void CheckDisposed()
+    {
+        if (_disposed) throw new ObjectDisposedException(nameof(KvStore));
     }
 
+    /// <summary>释放资源</summary>
+    /// <param name="disposing">是否由 Dispose 调用</param>
+    protected virtual void Dispose(Boolean disposing)
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        if (disposing)
+        {
+            CloseDataFile();
+        }
+    }
+
+    /// <summary>释放资源</summary>
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+    #endregion
+
+    #region 基本操作
     /// <summary>设置键值对</summary>
     /// <param name="key">键</param>
     /// <param name="value">值</param>
@@ -51,56 +96,77 @@ public partial class KvStore
     public void Set(String key, Byte[]? value, TimeSpan? ttl = null)
     {
         if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckDisposed();
 
-        // 未显式指定 TTL 时使用默认值
-        var effectiveTtl = ttl ?? (_defaultTtl > TimeSpan.Zero ? _defaultTtl : (TimeSpan?)null);
+        // 未显式指定 TTL 时使用默认 TTL；如果无默认 TTL 则永不过期
+        var expiresAt = ttl != null ? DateTime.UtcNow.Add(ttl.Value) : _defaultTtl != null ? DateTime.UtcNow.Add(_defaultTtl.Value) : DateTime.MaxValue;
 
-        lock (_lock)
+        lock (_writeLock)
         {
-            var now = DateTime.UtcNow;
-            if (_data.TryGetValue(key, out var existing))
+            var valueOffset = WriteSetRecordNoLock(key, value ?? [], expiresAt);
+            _data[key] = new KvEntry
             {
-                existing.Value = value;
-                existing.ExpiresAt = effectiveTtl.HasValue ? now.Add(effectiveTtl.Value) : null;
-                existing.ModifiedAt = now;
-            }
-            else
-            {
-                _data[key] = new KvEntry
-                {
-                    Key = key,
-                    Value = value,
-                    ExpiresAt = effectiveTtl.HasValue ? now.Add(effectiveTtl.Value) : null,
-                    CreatedAt = now,
-                    ModifiedAt = now,
-                };
-            }
+                ValueOffset = valueOffset,
+                ValueLength = value?.Length ?? 0,
+                ExpiresAt = expiresAt,
+            };
 
-            // 持久化
-            PersistKvSet(key, value, effectiveTtl.HasValue ? now.Add(effectiveTtl.Value) : (DateTime?)null);
+            TryAutoCompactNoLock();
         }
     }
 
-    /// <summary>获取键对应的值，过期则惰性删除并返回 null</summary>
+    /// <summary>获取键对应的值（池化数据包），过期则惰性删除并返回 null</summary>
     /// <param name="key">键</param>
-    /// <returns>值，不存在或已过期返回 null</returns>
-    public Byte[]? Get(String key)
+    /// <returns>池化数据包，不存在或已过期返回 null。调用方用完后需 Dispose 归还到池中</returns>
+    public IOwnerPacket? Get(String key)
     {
         if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckDisposed();
 
-        lock (_lock)
+        lock (_writeLock)
         {
-            if (!_data.TryGetValue(key, out var entry))
+            if (!_data.TryGetValue(key, out var index))
                 return null;
 
             // 惰性删除
-            if (entry.IsExpired())
+            if (index.IsExpired())
             {
-                _data.Remove(key);
+                _data.TryRemove(key, out _);
                 return null;
             }
 
-            return entry.Value;
+            // 从磁盘读取值
+            return ReadValueFromDiskNoLock(index);
+        }
+    }
+
+    /// <summary>尝试获取键对应的值（池化数据包）</summary>
+    /// <param name="key">键</param>
+    /// <param name="value">输出池化数据包，用完后需 Dispose 归还</param>
+    /// <returns>键存在且未过期返回 true</returns>
+    public Boolean TryGet(String key, out IOwnerPacket? value)
+    {
+        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckDisposed();
+
+        lock (_writeLock)
+        {
+            if (!_data.TryGetValue(key, out var index))
+            {
+                value = null;
+                return false;
+            }
+
+            // 惰性删除过期键
+            if (index.IsExpired())
+            {
+                _data.TryRemove(key, out _);
+                value = null;
+                return false;
+            }
+
+            value = ReadValueFromDiskNoLock(index);
+            return true;
         }
     }
 
@@ -110,13 +176,17 @@ public partial class KvStore
     public Boolean Delete(String key)
     {
         if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckDisposed();
 
-        lock (_lock)
+        lock (_writeLock)
         {
-            var removed = _data.Remove(key);
-            if (removed)
-                PersistKvDelete(key);
-            return removed;
+            if (_data.TryRemove(key, out _))
+            {
+                WriteDeleteRecordNoLock(key);
+                TryAutoCompactNoLock();
+                return true;
+            }
+            return false;
         }
     }
 
@@ -126,32 +196,45 @@ public partial class KvStore
     public Boolean Exists(String key)
     {
         if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckDisposed();
 
-        lock (_lock)
+        if (!_data.TryGetValue(key, out var index))
+            return false;
+
+        // 惰性删除
+        if (index.IsExpired())
         {
-            if (!_data.TryGetValue(key, out var entry))
-                return false;
-
-            // 惰性删除
-            if (entry.IsExpired())
-            {
-                _data.Remove(key);
-                return false;
-            }
-
-            return true;
+            _data.TryRemove(key, out _);
+            return false;
         }
+
+        return true;
     }
 
+    /// <summary>清空所有键值对</summary>
+    public void Clear()
+    {
+        CheckDisposed();
+
+        lock (_writeLock)
+        {
+            _data.Clear();
+            WriteClearRecordNoLock();
+            TryAutoCompactNoLock();
+        }
+    }
+    #endregion
+
+    #region 字符串便捷方法
     /// <summary>设置字符串键值对（UTF-8 编码）</summary>
     /// <param name="key">键</param>
     /// <param name="value">字符串值</param>
-    /// <param name="ttl">过期时间，null 表示永不过期</param>
+    /// <param name="ttl">过期时间，null 表示使用默认 TTL</param>
     public void SetString(String key, String value, TimeSpan? ttl = null)
     {
         if (value == null) throw new ArgumentNullException(nameof(value));
 
-        Set(key, Encoding.UTF8.GetBytes(value), ttl);
+        Set(key, value.GetBytes(), ttl);
     }
 
     /// <summary>获取字符串值（UTF-8 解码）</summary>
@@ -159,39 +242,40 @@ public partial class KvStore
     /// <returns>字符串值，不存在或已过期返回 null</returns>
     public String? GetString(String key)
     {
-        var bytes = Get(key);
-        if (bytes == null) return null;
+        using var pk = Get(key);
+        if (pk == null) return null;
+        if (pk.Length == 0) return String.Empty;
 
-        return Encoding.UTF8.GetString(bytes);
+        return pk.ToStr();
     }
+    #endregion
 
+    #region 高级操作
     /// <summary>仅当 key 不存在时添加，返回是否成功（分布式锁场景）</summary>
     /// <param name="key">键</param>
     /// <param name="value">值</param>
     /// <param name="ttl">过期时间</param>
-    /// <returns>添加成功返回 true，key 已存在返回 false</returns>
+    /// <returns>添加成功返回 true，key 已存在且未过期返回 false</returns>
     public Boolean Add(String key, Byte[] value, TimeSpan ttl)
     {
         if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckDisposed();
 
-        lock (_lock)
+        lock (_writeLock)
         {
-            if (_data.TryGetValue(key, out var entry) && !entry.IsExpired())
+            if (_data.TryGetValue(key, out var index) && !index.IsExpired())
                 return false;
 
-            var now = DateTime.UtcNow;
+            var expiresAt = DateTime.UtcNow.Add(ttl);
+            var valueOffset = WriteSetRecordNoLock(key, value, expiresAt);
             _data[key] = new KvEntry
             {
-                Key = key,
-                Value = value,
-                ExpiresAt = now.Add(ttl),
-                CreatedAt = now,
-                ModifiedAt = now,
+                ValueOffset = valueOffset,
+                ValueLength = value.Length,
+                ExpiresAt = expiresAt,
             };
 
-            // 持久化
-            PersistKvSet(key, value, now.Add(ttl));
-
+            TryAutoCompactNoLock();
             return true;
         }
     }
@@ -208,7 +292,45 @@ public partial class KvStore
         return Add(key, Encoding.UTF8.GetBytes(value), ttl);
     }
 
-    /// <summary>原子递增操作，key 不存在时初始化为 delta</summary>
+    /// <summary>替换并返回旧值（原子操作）</summary>
+    /// <param name="key">键</param>
+    /// <param name="value">新值</param>
+    /// <param name="ttl">过期时间，null 表示保持原有 TTL</param>
+    /// <returns>旧值池化数据包，不存在返回 null。调用方用完后需 Dispose</returns>
+    public IOwnerPacket? Replace(String key, Byte[]? value, TimeSpan? ttl = null)
+    {
+        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckDisposed();
+
+        lock (_writeLock)
+        {
+            IOwnerPacket? oldValue = null;
+            DateTime expiresAt;
+
+            if (_data.TryGetValue(key, out var index))
+            {
+                oldValue = index.IsExpired() ? null : ReadValueFromDiskNoLock(index);
+                expiresAt = ttl.HasValue ? DateTime.UtcNow.Add(ttl.Value) : index.ExpiresAt;
+            }
+            else
+            {
+                expiresAt = ttl != null ? DateTime.UtcNow.Add(ttl.Value) : _defaultTtl != null ? DateTime.UtcNow.Add(_defaultTtl.Value) : DateTime.MaxValue;
+            }
+
+            var valueOffset = WriteSetRecordNoLock(key, value ?? [], expiresAt);
+            _data[key] = new KvEntry
+            {
+                ValueOffset = valueOffset,
+                ValueLength = value?.Length ?? 0,
+                ExpiresAt = expiresAt,
+            };
+
+            TryAutoCompactNoLock();
+            return oldValue;
+        }
+    }
+
+    /// <summary>原子递增操作（Int64），key 不存在时初始化为 delta</summary>
     /// <param name="key">键</param>
     /// <param name="delta">递增量</param>
     /// <param name="ttl">过期时间（可选，仅在 key 不存在时使用默认 TTL）</param>
@@ -216,181 +338,140 @@ public partial class KvStore
     public Int64 Inc(String key, Int64 delta = 1, TimeSpan? ttl = null)
     {
         if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckDisposed();
 
-        lock (_lock)
+        lock (_writeLock)
         {
-            var now = DateTime.UtcNow;
             Int64 newValue;
+            DateTime expiresAt;
 
-            if (_data.TryGetValue(key, out var entry) && !entry.IsExpired())
+            if (_data.TryGetValue(key, out var index) && !index.IsExpired())
             {
-                // key 存在且未过期，解析当前值并递增
-                var current = entry.Value != null ? Int64.Parse(Encoding.UTF8.GetString(entry.Value)) : 0;
+                // 从磁盘读取当前值并递增（二进制 Int64）
+                using var currentPk = ReadValueFromDiskNoLock(index);
+                var current = (currentPk != null && currentPk.Length >= 8) ? new SpanReader(currentPk).ReadInt64() : 0L;
                 newValue = current + delta;
-                entry.Value = Encoding.UTF8.GetBytes(newValue.ToString());
-                entry.ModifiedAt = now;
-
-                // 持久化更新后的值
-                PersistKvSet(key, entry.Value, entry.ExpiresAt);
+                expiresAt = index.ExpiresAt;
             }
             else
             {
                 // key 不存在或已过期，初始化为 delta
                 newValue = delta;
-                var effectiveTtl = ttl ?? (_defaultTtl > TimeSpan.Zero ? _defaultTtl : (TimeSpan?)null);
-                var expiresAt = effectiveTtl.HasValue ? now.Add(effectiveTtl.Value) : (DateTime?)null;
-                var valueBytes = Encoding.UTF8.GetBytes(newValue.ToString());
-                _data[key] = new KvEntry
-                {
-                    Key = key,
-                    Value = valueBytes,
-                    ExpiresAt = expiresAt,
-                    CreatedAt = now,
-                    ModifiedAt = now,
-                };
-
-                // 持久化新值
-                PersistKvSet(key, valueBytes, expiresAt);
+                expiresAt = ttl != null ? DateTime.UtcNow.Add(ttl.Value) : _defaultTtl != null ? DateTime.UtcNow.Add(_defaultTtl.Value) : DateTime.MaxValue;
             }
 
+            var valueBytes = BitConverter.GetBytes(newValue);
+            var valueOffset = WriteSetRecordNoLock(key, valueBytes, expiresAt);
+            _data[key] = new KvEntry
+            {
+                ValueOffset = valueOffset,
+                ValueLength = valueBytes.Length,
+                ExpiresAt = expiresAt,
+            };
+
+            TryAutoCompactNoLock();
             return newValue;
         }
     }
 
-    /// <summary>获取键的过期时间</summary>
+    /// <summary>原子递增操作（Double），key 不存在时初始化为 delta</summary>
     /// <param name="key">键</param>
-    /// <returns>过期时间，键不存在返回 null</returns>
-    public DateTime? GetExpiration(String key)
+    /// <param name="delta">递增量</param>
+    /// <param name="ttl">过期时间（可选）</param>
+    /// <returns>递增后的值</returns>
+    public Double IncDouble(String key, Double delta, TimeSpan? ttl = null)
     {
         if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckDisposed();
 
-        lock (_lock)
+        lock (_writeLock)
         {
-            if (!_data.TryGetValue(key, out var entry))
-                return null;
+            Double newValue;
+            DateTime expiresAt;
 
-            return entry.ExpiresAt;
-        }
-    }
-
-    /// <summary>更新键的过期时间</summary>
-    /// <param name="key">键</param>
-    /// <param name="ttl">新的 TTL</param>
-    /// <returns>键存在并更新成功返回 true</returns>
-    public Boolean SetExpiration(String key, TimeSpan ttl)
-    {
-        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
-
-        lock (_lock)
-        {
-            if (!_data.TryGetValue(key, out var entry))
-                return false;
-
-            entry.ExpiresAt = DateTime.UtcNow.Add(ttl);
-            entry.ModifiedAt = DateTime.UtcNow;
-            return true;
-        }
-    }
-
-    /// <summary>清理所有已过期的条目</summary>
-    /// <returns>删除的条目数量</returns>
-    public Int32 CleanupExpired()
-    {
-        var toRemove = new List<String>();
-
-        lock (_lock)
-        {
-            foreach (var kvp in _data)
+            if (_data.TryGetValue(key, out var index) && !index.IsExpired())
             {
-                if (kvp.Value.IsExpired())
-                    toRemove.Add(kvp.Key);
+                // 从磁盘读取当前值并递增（二进制 Double）
+                using var currentPk = ReadValueFromDiskNoLock(index);
+                var current = (currentPk != null && currentPk.Length >= 8) ? new SpanReader(currentPk).ReadDouble() : 0d;
+                newValue = current + delta;
+                expiresAt = index.ExpiresAt;
+            }
+            else
+            {
+                newValue = delta;
+                expiresAt = ttl != null ? DateTime.UtcNow.Add(ttl.Value) : _defaultTtl != null ? DateTime.UtcNow.Add(_defaultTtl.Value) : DateTime.MaxValue;
             }
 
-            foreach (var key in toRemove)
+            var valueBytes = BitConverter.GetBytes(newValue);
+            var valueOffset = WriteSetRecordNoLock(key, valueBytes, expiresAt);
+            _data[key] = new KvEntry
             {
-                _data.Remove(key);
-            }
-        }
+                ValueOffset = valueOffset,
+                ValueLength = valueBytes.Length,
+                ExpiresAt = expiresAt,
+            };
 
-        return toRemove.Count;
-    }
-
-    /// <summary>获取所有未过期的键</summary>
-    /// <returns>未过期键列表</returns>
-    public List<String> GetAllKeys()
-    {
-        var keys = new List<String>();
-
-        lock (_lock)
-        {
-            foreach (var kvp in _data)
-            {
-                if (!kvp.Value.IsExpired())
-                    keys.Add(kvp.Key);
-            }
-        }
-
-        return keys;
-    }
-
-    /// <summary>清空所有键值对</summary>
-    public void Clear()
-    {
-        lock (_lock)
-        {
-            _data.Clear();
+            TryAutoCompactNoLock();
+            return newValue;
         }
     }
+    #endregion
 
-    /// <summary>按模式搜索未过期的键</summary>
-    /// <param name="pattern">搜索模式，支持 * 和 ? 通配符</param>
-    /// <param name="offset">起始偏移量</param>
-    /// <param name="count">返回数量，-1 表示全部</param>
-    /// <returns>匹配的键集合</returns>
-    public IEnumerable<String> Search(String pattern, Int32 offset = 0, Int32 count = -1)
+    #region 批量操作
+    /// <summary>批量获取键值对（池化数据包）</summary>
+    /// <param name="keys">键集合</param>
+    /// <returns>键值对字典，仅包含存在且未过期的键。每个 IOwnerPacket 用完后需 Dispose</returns>
+    public IDictionary<String, IOwnerPacket?> GetAll(IEnumerable<String> keys)
     {
-        lock (_lock)
+        if (keys == null) throw new ArgumentNullException(nameof(keys));
+        CheckDisposed();
+
+        var result = new Dictionary<String, IOwnerPacket?>();
+        lock (_writeLock)
         {
-            var result = new List<String>();
-            foreach (var kvp in _data)
+            foreach (var key in keys)
             {
-                if (kvp.Value.IsExpired()) continue;
+                if (String.IsNullOrEmpty(key)) continue;
 
-                if (MatchPattern(kvp.Key, pattern))
-                    result.Add(kvp.Key);
+                if (_data.TryGetValue(key, out var index))
+                {
+                    if (index.IsExpired())
+                        _data.TryRemove(key, out _);
+                    else
+                        result[key] = ReadValueFromDiskNoLock(index);
+                }
             }
-
-            if (offset > 0)
-                result = result.Skip(offset).ToList();
-            if (count >= 0)
-                result = result.Take(count).ToList();
-
-            return result;
         }
+        return result;
     }
 
-    /// <summary>获取键的剩余存活时间</summary>
-    /// <param name="key">键</param>
-    /// <returns>剩余 TTL。永不过期返回 TimeSpan.Zero；不存在或已过期返回负值</returns>
-    public TimeSpan GetTtl(String key)
+    /// <summary>批量设置键值对</summary>
+    /// <param name="values">键值对字典</param>
+    /// <param name="ttl">过期时间，null 表示使用默认 TTL</param>
+    public void SetAll(IDictionary<String, Byte[]?> values, TimeSpan? ttl = null)
     {
-        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        if (values == null) throw new ArgumentNullException(nameof(values));
+        CheckDisposed();
 
-        lock (_lock)
+        var expiresAt = ttl != null ? DateTime.UtcNow.Add(ttl.Value) : _defaultTtl != null ? DateTime.UtcNow.Add(_defaultTtl.Value) : DateTime.MaxValue;
+
+        lock (_writeLock)
         {
-            if (!_data.TryGetValue(key, out var entry))
-                return TimeSpan.FromSeconds(-1);
-
-            if (entry.IsExpired())
+            foreach (var kvp in values)
             {
-                _data.Remove(key);
-                return TimeSpan.FromSeconds(-1);
+                if (String.IsNullOrEmpty(kvp.Key)) continue;
+
+                var valueOffset = WriteSetRecordNoLock(kvp.Key, kvp.Value ?? [], expiresAt);
+                _data[kvp.Key] = new KvEntry
+                {
+                    ValueOffset = valueOffset,
+                    ValueLength = kvp.Value?.Length ?? 0,
+                    ExpiresAt = expiresAt,
+                };
             }
 
-            if (entry.ExpiresAt == null)
-                return TimeSpan.Zero;
-
-            return entry.ExpiresAt.Value - DateTime.UtcNow;
+            TryAutoCompactNoLock();
         }
     }
 
@@ -400,22 +481,173 @@ public partial class KvStore
     public Int32 Delete(IEnumerable<String> keys)
     {
         if (keys == null) return 0;
+        CheckDisposed();
 
         var count = 0;
-        lock (_lock)
+        lock (_writeLock)
         {
             foreach (var key in keys)
             {
                 if (String.IsNullOrEmpty(key)) continue;
-                if (_data.Remove(key))
+                if (_data.TryRemove(key, out _))
                 {
-                    PersistKvDelete(key);
+                    WriteDeleteRecordNoLock(key);
                     count++;
                 }
+            }
+
+            TryAutoCompactNoLock();
+        }
+
+        return count;
+    }
+    #endregion
+
+    #region TTL 管理
+    /// <summary>获取键的过期时间</summary>
+    /// <param name="key">键</param>
+    /// <returns>过期时间。键不存在或永不过期返回 null</returns>
+    public DateTime? GetExpiration(String key)
+    {
+        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckDisposed();
+
+        if (!_data.TryGetValue(key, out var index))
+            return null;
+
+        // 永不过期视为无 TTL
+        if (index.ExpiresAt == DateTime.MaxValue) return null;
+
+        return index.ExpiresAt;
+    }
+
+    /// <summary>更新键的过期时间</summary>
+    /// <param name="key">键</param>
+    /// <param name="ttl">新的 TTL。TimeSpan.Zero 表示永不过期</param>
+    /// <returns>键存在并更新成功返回 true</returns>
+    public Boolean SetExpiration(String key, TimeSpan ttl)
+    {
+        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckDisposed();
+
+        lock (_writeLock)
+        {
+            if (!_data.TryGetValue(key, out var index))
+                return false;
+
+            if (index.IsExpired())
+            {
+                _data.TryRemove(key, out _);
+                return false;
+            }
+
+            var newExpiresAt = ttl == TimeSpan.Zero ? DateTime.MaxValue : DateTime.UtcNow.Add(ttl);
+
+            // 从磁盘读取当前值，以新 TTL 重新追加写入
+            using var valuePk = ReadValueFromDiskNoLock(index);
+            var value = valuePk?.ReadBytes() ?? [];
+            var valueOffset = WriteSetRecordNoLock(key, value, newExpiresAt);
+            _data[key] = new KvEntry
+            {
+                ValueOffset = valueOffset,
+                ValueLength = value.Length,
+                ExpiresAt = newExpiresAt,
+            };
+
+            TryAutoCompactNoLock();
+            return true;
+        }
+    }
+
+    /// <summary>获取键的剩余存活时间</summary>
+    /// <param name="key">键</param>
+    /// <returns>剩余 TTL。永不过期返回 TimeSpan.Zero；不存在或已过期返回负值</returns>
+    public TimeSpan GetTtl(String key)
+    {
+        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckDisposed();
+
+        if (!_data.TryGetValue(key, out var index))
+            return TimeSpan.FromSeconds(-1);
+
+        if (index.IsExpired())
+        {
+            _data.TryRemove(key, out _);
+            return TimeSpan.FromSeconds(-1);
+        }
+
+        if (index.ExpiresAt == DateTime.MaxValue)
+            return TimeSpan.Zero;
+
+        return index.ExpiresAt - DateTime.UtcNow;
+    }
+
+    /// <summary>清理所有已过期的条目</summary>
+    /// <returns>删除的条目数量</returns>
+    public Int32 CleanupExpired()
+    {
+        CheckDisposed();
+
+        var count = 0;
+        foreach (var kvp in _data)
+        {
+            if (kvp.Value.IsExpired())
+            {
+                if (_data.TryRemove(kvp.Key, out _))
+                    count++;
             }
         }
 
         return count;
+    }
+    #endregion
+
+    #region 搜索与枚举
+    /// <summary>获取所有未过期的键</summary>
+    /// <returns>未过期键序列</returns>
+    public IEnumerable<String> GetAllKeys()
+    {
+        CheckDisposed();
+
+        foreach (var kvp in _data)
+        {
+            if (!kvp.Value.IsExpired())
+                yield return kvp.Key;
+        }
+    }
+
+    /// <summary>按模式搜索未过期的键</summary>
+    /// <param name="pattern">搜索模式，支持 * 和 ? 通配符</param>
+    /// <param name="offset">起始偏移量</param>
+    /// <param name="count">返回数量，-1 表示全部</param>
+    /// <returns>匹配的键序列</returns>
+    public IEnumerable<String> Search(String pattern, Int32 offset = 0, Int32 count = -1)
+    {
+        CheckDisposed();
+
+        var current = 0;
+        var returned = 0;
+        foreach (var kvp in _data)
+        {
+            if (kvp.Value.IsExpired()) continue;
+
+            if (pattern.IsNullOrEmpty() || pattern == kvp.Key || pattern.IsMatch(kvp.Key))
+            {
+                // 跳过前 offset 个
+                if (current < offset)
+                {
+                    current++;
+                    continue;
+                }
+
+                // 达到 count 限制则停止
+                if (count >= 0 && returned >= count)
+                    break;
+
+                yield return kvp.Key;
+                returned++;
+            }
+        }
     }
 
     /// <summary>按模式删除键</summary>
@@ -423,63 +655,30 @@ public partial class KvStore
     /// <returns>删除的键数量</returns>
     public Int32 DeleteByPattern(String pattern)
     {
-        lock (_lock)
-        {
-            var toRemove = new List<String>();
-            foreach (var kvp in _data)
-            {
-                if (MatchPattern(kvp.Key, pattern))
-                    toRemove.Add(kvp.Key);
-            }
+        CheckDisposed();
 
+        var toRemove = new List<String>();
+        foreach (var kvp in _data)
+        {
+            if (pattern.IsMatch(kvp.Key))
+                toRemove.Add(kvp.Key);
+        }
+
+        lock (_writeLock)
+        {
+            var count = 0;
             foreach (var key in toRemove)
             {
-                _data.Remove(key);
-                PersistKvDelete(key);
+                if (_data.TryRemove(key, out _))
+                {
+                    WriteDeleteRecordNoLock(key);
+                    count++;
+                }
             }
 
-            return toRemove.Count;
+            TryAutoCompactNoLock();
+            return count;
         }
     }
-
-    /// <summary>简单通配符匹配，支持 * 和 ? </summary>
-    private static Boolean MatchPattern(String input, String pattern)
-    {
-        if (pattern == "*") return true;
-
-        var i = 0;
-        var j = 0;
-        var starIdx = -1;
-        var matchIdx = 0;
-
-        while (i < input.Length)
-        {
-            if (j < pattern.Length && (pattern[j] == '?' || pattern[j] == input[i]))
-            {
-                i++;
-                j++;
-            }
-            else if (j < pattern.Length && pattern[j] == '*')
-            {
-                starIdx = j;
-                matchIdx = i;
-                j++;
-            }
-            else if (starIdx != -1)
-            {
-                j = starIdx + 1;
-                matchIdx++;
-                i = matchIdx;
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        while (j < pattern.Length && pattern[j] == '*')
-            j++;
-
-        return j == pattern.Length;
-    }
+    #endregion
 }

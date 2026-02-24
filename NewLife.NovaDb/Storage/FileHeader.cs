@@ -194,7 +194,10 @@ public enum FileType : Byte
     Binlog = 4,
 
     /// <summary>数据库元数据文件 (nova.db)</summary>
-    Metadata = 5
+    Metadata = 5,
+
+    /// <summary>KV 数据文件 (.kvd)</summary>
+    KvData = 6,
 }
 
 /// <summary>文件特性标志</summary>

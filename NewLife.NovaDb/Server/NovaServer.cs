@@ -82,7 +82,7 @@ public class NovaServer : DisposeBase
         _sqlEngine = new SqlEngine(dbPath, dbOptions);
 
         // 初始化 KV 存储引擎
-        var kvPath = Path.Combine(dbPath, "kv");
+        var kvPath = Path.Combine(dbPath, "default.kvd");
         _kvStore = new KvStore(dbOptions, kvPath);
 
         // 初始化消息队列引擎
@@ -142,7 +142,7 @@ public class NovaServer : DisposeBase
 
         _fluxEngine?.Dispose();
         _fluxEngine = null;
-        _kvStore?.CloseKvLog();
+        _kvStore?.Dispose();
         _kvStore = null;
 
         _sqlEngine?.Dispose();
@@ -171,7 +171,7 @@ public class NovaServer : DisposeBase
 
         _fluxEngine?.Dispose();
         _fluxEngine = null;
-        _kvStore?.CloseKvLog();
+        _kvStore?.Dispose();
         _kvStore = null;
 
         _sqlEngine?.Dispose();

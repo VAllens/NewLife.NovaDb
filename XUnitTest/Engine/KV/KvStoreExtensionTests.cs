@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Text;
 using NewLife.NovaDb.Engine.KV;
@@ -7,12 +8,27 @@ using Xunit;
 namespace XUnitTest.Engine.KV;
 
 /// <summary>KvStore 扩展功能单元测试</summary>
-public class KvStoreExtensionTests
+public class KvStoreExtensionTests : IDisposable
 {
+    private readonly String _testDir;
+    private Int32 _fileCounter;
+
+    public KvStoreExtensionTests()
+    {
+        _testDir = Path.Combine(Path.GetTempPath(), "novadb_kvext_" + Guid.NewGuid().ToString("N").Substring(0, 8));
+        Directory.CreateDirectory(_testDir);
+    }
+
+    private KvStore CreateStore() => new KvStore(null, Path.Combine(_testDir, $"test_{++_fileCounter}.kvd"));
+
+    public void Dispose()
+    {
+        try { if (Directory.Exists(_testDir)) Directory.Delete(_testDir, true); } catch { }
+    }
     [Fact(DisplayName = "测试Clear清空所有数据")]
     public void TestClear()
     {
-        var store = new KvStore();
+        using var store = CreateStore();
         store.SetString("k1", "v1");
         store.SetString("k2", "v2");
 
@@ -24,7 +40,7 @@ public class KvStoreExtensionTests
     [Fact(DisplayName = "测试Search搜索键")]
     public void TestSearch()
     {
-        var store = new KvStore();
+        using var store = CreateStore();
         store.SetString("user:1", "Alice");
         store.SetString("user:2", "Bob");
         store.SetString("order:1", "Order1");
@@ -42,7 +58,7 @@ public class KvStoreExtensionTests
     [Fact(DisplayName = "测试Search分页")]
     public void TestSearchPagination()
     {
-        var store = new KvStore();
+        using var store = CreateStore();
         for (var i = 0; i < 10; i++)
             store.SetString($"key:{i}", $"val:{i}");
 
@@ -53,7 +69,7 @@ public class KvStoreExtensionTests
     [Fact(DisplayName = "测试GetTtl获取剩余时间")]
     public void TestGetTtl()
     {
-        var store = new KvStore();
+        using var store = CreateStore();
         store.SetString("key1", "value1", TimeSpan.FromSeconds(3600));
 
         var ttl = store.GetTtl("key1");
@@ -63,7 +79,7 @@ public class KvStoreExtensionTests
     [Fact(DisplayName = "测试GetTtl永不过期返回Zero")]
     public void TestGetTtlNoExpire()
     {
-        var store = new KvStore();
+        using var store = CreateStore();
         store.SetString("key1", "value1");
 
         var ttl = store.GetTtl("key1");
@@ -73,7 +89,7 @@ public class KvStoreExtensionTests
     [Fact(DisplayName = "测试GetTtl不存在键返回负值")]
     public void TestGetTtlNonExistent()
     {
-        var store = new KvStore();
+        using var store = CreateStore();
 
         var ttl = store.GetTtl("missing");
         Assert.True(ttl.TotalSeconds < 0);
@@ -82,7 +98,7 @@ public class KvStoreExtensionTests
     [Fact(DisplayName = "测试批量删除")]
     public void TestBatchDelete()
     {
-        var store = new KvStore();
+        using var store = CreateStore();
         store.SetString("a", "1");
         store.SetString("b", "2");
         store.SetString("c", "3");
@@ -97,7 +113,7 @@ public class KvStoreExtensionTests
     [Fact(DisplayName = "测试按模式删除")]
     public void TestDeleteByPattern()
     {
-        var store = new KvStore();
+        using var store = CreateStore();
         store.SetString("temp:1", "a");
         store.SetString("temp:2", "b");
         store.SetString("keep", "c");
@@ -111,7 +127,7 @@ public class KvStoreExtensionTests
     [Fact(DisplayName = "测试通配符问号匹配")]
     public void TestQuestionMarkPattern()
     {
-        var store = new KvStore();
+        using var store = CreateStore();
         store.SetString("a1", "v1");
         store.SetString("a2", "v2");
         store.SetString("ab", "v3");

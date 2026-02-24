@@ -1,4 +1,4 @@
-using NewLife.NovaDb.Core;
+﻿using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
 using NewLife.NovaDb.Tx;
 
@@ -146,7 +146,7 @@ partial class SqlEngine
                     tx.Commit();
                 }
 
-                rows.Add(new Object?[] { tableName, tableSchema.Columns.Count, pkCol?.Name, rowCount });
+                rows.Add([tableName, tableSchema.Columns.Count, pkCol?.Name, rowCount]);
             }
         }
 
@@ -173,10 +173,10 @@ partial class SqlEngine
 
                 foreach (var col in tableSchema.Columns)
                 {
-                    rows.Add(new Object?[]
-                    {
+                    rows.Add(
+                    [
                         tableName, col.Name, col.DataType.ToString(), col.Nullable, col.IsPrimaryKey, col.Ordinal
-                    });
+                    ]);
                 }
             }
         }
@@ -204,19 +204,19 @@ partial class SqlEngine
                 // 主键索引始终存在
                 if (pkCol != null)
                 {
-                    rows.Add(new Object?[]
-                    {
+                    rows.Add(
+                    [
                         tableName, $"pk_{tableName}", true, pkCol.Name
-                    });
+                    ]);
                 }
 
                 // 二级索引
                 foreach (var idx in tableSchema.Indexes)
                 {
-                    rows.Add(new Object?[]
-                    {
+                    rows.Add(
+                    [
                         tableName, idx.IndexName, idx.IsUnique, String.Join(",", idx.Columns)
-                    });
+                    ]);
                 }
             }
         }
@@ -288,7 +288,7 @@ partial class SqlEngine
             foreach (var (fileName, size) in Binlog.ListFiles())
             {
                 var isCurrent = fileName.EndsWith($".{Binlog.FileIndex:D6}");
-                rows.Add(new Object?[] { fileName, size, isCurrent });
+                rows.Add([fileName, size, isCurrent]);
             }
         }
 

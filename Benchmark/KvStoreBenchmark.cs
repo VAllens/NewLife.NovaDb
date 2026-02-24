@@ -1,4 +1,5 @@
 using BenchmarkDotNet.Attributes;
+using NewLife.Data;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine.KV;
 
@@ -22,7 +23,8 @@ public class KvStoreBenchmark
     {
         _storePath = Path.Combine(Path.GetTempPath(), $"NovaBench_Kv_{ValueSize}_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_storePath);
-        _store = new KvStore(new DbOptions { DefaultKvTtl = TimeSpan.Zero }, _storePath);
+        var kvFile = Path.Combine(_storePath, "bench.kvd");
+        _store = new KvStore(new DbOptions { DefaultKvTtl = TimeSpan.Zero }, kvFile);
         _value = new Byte[ValueSize];
         Random.Shared.NextBytes(_value);
 
@@ -36,6 +38,7 @@ public class KvStoreBenchmark
     [GlobalCleanup]
     public void Cleanup()
     {
+        _store?.Dispose();
         try { Directory.Delete(_storePath, true); } catch { }
     }
 
@@ -47,13 +50,13 @@ public class KvStoreBenchmark
     }
 
     [Benchmark(Description = "Get 读取")]
-    public Byte[]? Get()
+    public IOwnerPacket? Get()
     {
         return _store.Get("key:500");
     }
 
     [Benchmark(Description = "Set+Get 读写混合")]
-    public Byte[]? SetThenGet()
+    public IOwnerPacket? SetThenGet()
     {
         var id = Interlocked.Increment(ref _counter);
         var key = $"key:{id}";

@@ -1,4 +1,4 @@
-using NewLife.NovaDb.Core;
+﻿using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Sql;
 
@@ -29,7 +29,7 @@ public partial class SqlEngine
                 ExplainDelete(delete, plan);
                 break;
             default:
-                plan.Add(new Object?[] { "1", "DDL", inner.StatementType.ToString(), "", "", "DDL statement, no query plan" });
+                plan.Add(["1", "DDL", inner.StatementType.ToString(), "", "", "DDL statement, no query plan"]);
                 break;
         }
 
@@ -81,7 +81,7 @@ public partial class SqlEngine
             estimatedRows = "1";
         }
 
-        plan.Add(new Object?[] { stepId.ToString(), scanType, tableName, key, estimatedRows, extra });
+        plan.Add([stepId.ToString(), scanType, tableName, key, estimatedRows, extra]);
         stepId++;
 
         // JOIN 计划
@@ -92,7 +92,7 @@ public partial class SqlEngine
                 var joinType = join.Type.ToString().ToUpper() + " JOIN";
                 var joinTable = join.TableName;
                 var joinExtra = $"Nested Loop, ON: {join.Condition}";
-                plan.Add(new Object?[] { stepId.ToString(), joinType, joinTable, "", "?", joinExtra });
+                plan.Add([stepId.ToString(), joinType, joinTable, "", "?", joinExtra]);
                 stepId++;
             }
         }
@@ -112,21 +112,21 @@ public partial class SqlEngine
         if (select.GroupBy != null && select.GroupBy.Count > 0)
         {
             var groupCols = String.Join(", ", select.GroupBy);
-            plan.Add(new Object?[] { stepId.ToString(), "GROUP BY", "", "", "?", $"Columns: {groupCols}" });
+            plan.Add([stepId.ToString(), "GROUP BY", "", "", "?", $"Columns: {groupCols}"]);
             stepId++;
         }
 
         // HAVING
         if (select.Having != null)
         {
-            plan.Add(new Object?[] { stepId.ToString(), "HAVING", "", "", "?", "Post-aggregation filter" });
+            plan.Add([stepId.ToString(), "HAVING", "", "", "?", "Post-aggregation filter"]);
             stepId++;
         }
 
         // ORDER BY
         if (select.OrderBy != null && select.OrderBy.Count > 0)
         {
-            plan.Add(new Object?[] { stepId.ToString(), "SORT", "", "", "?", $"In-memory sort, {select.OrderBy.Count} key(s)" });
+            plan.Add([stepId.ToString(), "SORT", "", "", "?", $"In-memory sort, {select.OrderBy.Count} key(s)"]);
             stepId++;
         }
 
@@ -136,7 +136,7 @@ public partial class SqlEngine
             var limitExtra = $"LIMIT {select.Limit.Value}";
             if (select.OffsetValue.HasValue)
                 limitExtra += $" OFFSET {select.OffsetValue.Value}";
-            plan.Add(new Object?[] { stepId.ToString(), "LIMIT", "", "", select.Limit.Value.ToString(), limitExtra });
+            plan.Add([stepId.ToString(), "LIMIT", "", "", select.Limit.Value.ToString(), limitExtra]);
         }
     }
 
@@ -157,7 +157,7 @@ public partial class SqlEngine
     private void ExplainInsert(InsertStatement insert, List<Object?[]> plan)
     {
         var rowCount = insert.ValuesList?.Count ?? 0;
-        plan.Add(new Object?[] { "1", "INSERT", insert.TableName, "PRIMARY", rowCount.ToString(), $"Insert {rowCount} row(s) with PK check" });
+        plan.Add(["1", "INSERT", insert.TableName, "PRIMARY", rowCount.ToString(), $"Insert {rowCount} row(s) with PK check"]);
     }
 
     /// <summary>生成 UPDATE 计划</summary>
@@ -179,7 +179,7 @@ public partial class SqlEngine
             }
         }
 
-        plan.Add(new Object?[] { "1", scanType, update.TableName, "", "?", $"Update {update.SetClauses?.Count ?? 0} column(s)" });
+        plan.Add(["1", scanType, update.TableName, "", "?", $"Update {update.SetClauses?.Count ?? 0} column(s)"]);
     }
 
     /// <summary>生成 DELETE 计划</summary>
@@ -200,6 +200,6 @@ public partial class SqlEngine
             }
         }
 
-        plan.Add(new Object?[] { "1", scanType, delete.TableName, "", "?", "Soft delete (mark version)" });
+        plan.Add(["1", scanType, delete.TableName, "", "?", "Soft delete (mark version)"]);
     }
 }

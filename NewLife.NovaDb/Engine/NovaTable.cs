@@ -425,7 +425,7 @@ public partial class NovaTable : IDisposable
                     RecordType = WalRecordType.UpdatePage,
                     TxId = tx.TxId,
                     PageId = 0,
-                    Data = new Byte[0]
+                    Data = []
                 };
                 _walWriter.Write(record);
             }
