@@ -113,7 +113,6 @@ internal class FluxController : IApi
         if (SharedEngine == null) return false;
 
         var mid = MessageId.Parse(messageId);
-        if (mid == null) return false;
 
         lock (_lock)
         {

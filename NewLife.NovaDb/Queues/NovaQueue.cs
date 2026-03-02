@@ -205,7 +205,7 @@ public class NovaQueue<T> : IProducerConsumer<T>, IDisposable
         foreach (var key in keys)
         {
             var mid = MessageId.Parse(key);
-            if (mid != null && Acknowledge(Group!, mid))
+            if (Acknowledge(Group!, mid))
                 count++;
         }
         return count;
@@ -247,7 +247,7 @@ public class NovaQueue<T> : IProducerConsumer<T>, IDisposable
 
                         // 自动确认
                         var mid = MessageId.Parse(msgId);
-                        if (mid != null) Acknowledge(Group!, mid);
+                        Acknowledge(Group!, mid);
                     }
                 }
                 else
@@ -382,7 +382,6 @@ public class NovaQueue<T> : IProducerConsumer<T>, IDisposable
     public Boolean Acknowledge(String groupName, MessageId id)
     {
         if (groupName == null) throw new ArgumentNullException(nameof(groupName));
-        if (id == null) throw new ArgumentNullException(nameof(id));
 
         lock (_lock)
         {
@@ -514,7 +513,6 @@ public class NovaQueue<T> : IProducerConsumer<T>, IDisposable
     public void MoveToDeadLetter(String groupName, MessageId id, String reason)
     {
         if (groupName == null) throw new ArgumentNullException(nameof(groupName));
-        if (id == null) throw new ArgumentNullException(nameof(id));
 
         FluxEntry? entry = null;
         PendingEntry? pending = null;
@@ -580,7 +578,6 @@ public class NovaQueue<T> : IProducerConsumer<T>, IDisposable
     public Boolean RetryDeadLetter(String groupName, MessageId id)
     {
         if (groupName == null) throw new ArgumentNullException(nameof(groupName));
-        if (id == null) throw new ArgumentNullException(nameof(id));
 
         DeadLetterEntry? deadLetter = null;
 
@@ -614,7 +611,6 @@ public class NovaQueue<T> : IProducerConsumer<T>, IDisposable
     public Boolean DeleteDeadLetter(String groupName, MessageId id)
     {
         if (groupName == null) throw new ArgumentNullException(nameof(groupName));
-        if (id == null) throw new ArgumentNullException(nameof(id));
 
         lock (_deadLetterLock)
         {

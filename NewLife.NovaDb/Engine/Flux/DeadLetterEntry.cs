@@ -1,10 +1,10 @@
-namespace NewLife.NovaDb.Engine.Flux;
+﻿namespace NewLife.NovaDb.Engine.Flux;
 
 /// <summary>死信队列条目</summary>
 public class DeadLetterEntry
 {
     /// <summary>消息 ID</summary>
-    public MessageId Id { get; set; } = null!;
+    public MessageId Id { get; set; }
 
     /// <summary>原始消息数据</summary>
     public FluxEntry Entry { get; set; } = null!;

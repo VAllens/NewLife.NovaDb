@@ -1,10 +1,10 @@
-namespace NewLife.NovaDb.Engine.Flux;
+﻿namespace NewLife.NovaDb.Engine.Flux;
 
 /// <summary>待确认消息条目</summary>
 public class PendingEntry
 {
     /// <summary>消息 ID</summary>
-    public MessageId Id { get; set; } = null!;
+    public MessageId Id { get; set; }
 
     /// <summary>消费者名称</summary>
     public String Consumer { get; set; } = String.Empty;
@@ -44,8 +44,6 @@ public class ConsumerGroup
     /// <returns>是否移除成功</returns>
     public Boolean Acknowledge(MessageId id)
     {
-        if (id == null) throw new ArgumentNullException(nameof(id));
-
         lock (_lock)
         {
             return _pendingEntries.Remove(id.ToString());
@@ -57,7 +55,6 @@ public class ConsumerGroup
     /// <param name="consumer">消费者名称</param>
     public void AddPending(MessageId id, String consumer)
     {
-        if (id == null) throw new ArgumentNullException(nameof(id));
         if (consumer == null) throw new ArgumentNullException(nameof(consumer));
 
         lock (_lock)

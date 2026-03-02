@@ -1,7 +1,7 @@
 ﻿namespace NewLife.NovaDb.Engine.Flux;
 
 /// <summary>消息 ID，格式为 "timestamp-sequence"</summary>
-public class MessageId : IComparable<MessageId>, IEquatable<MessageId>
+public readonly struct MessageId : IComparable<MessageId?>, IEquatable<MessageId?>
 {
     /// <summary>UTC 时间戳（Ticks）</summary>
     public Int64 Timestamp { get; }
@@ -69,10 +69,10 @@ public class MessageId : IComparable<MessageId>, IEquatable<MessageId>
     {
         if (other == null) return 1;
 
-        var cmp = Timestamp.CompareTo(other.Timestamp);
+        var cmp = Timestamp.CompareTo(other.Value.Timestamp);
         if (cmp != 0) return cmp;
 
-        return Sequence.CompareTo(other.Sequence);
+        return Sequence.CompareTo(other.Value.Sequence);
     }
 
     /// <summary>判断是否相等</summary>
@@ -81,7 +81,7 @@ public class MessageId : IComparable<MessageId>, IEquatable<MessageId>
     public Boolean Equals(MessageId? other)
     {
         if (other == null) return false;
-        return Timestamp == other.Timestamp && Sequence == other.Sequence;
+        return Timestamp == other.Value.Timestamp && Sequence == other.Value.Sequence;
     }
 
     /// <summary>判断是否相等</summary>
