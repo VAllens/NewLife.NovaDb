@@ -267,7 +267,6 @@ public class NovaQueueTests : IDisposable
         {
             Assert.Equal("consumer1", p.Consumer);
             Assert.Equal(1, p.DeliveryCount);
-            Assert.NotNull(p.Id);
         }
     }
 

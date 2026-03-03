@@ -1,4 +1,6 @@
+﻿using System.Buffers;
 using NewLife.NovaDb.Core;
+using NewLife.NovaDb.Utilities;
 
 namespace NewLife.NovaDb.Server;
 
@@ -233,10 +235,38 @@ public class AuthManager
     /// <summary>密码哈希（SHA256）</summary>
     private static String HashPassword(String password)
     {
-        var bytes = System.Text.Encoding.UTF8.GetBytes(password);
+        using var bytes = System.Text.Encoding.UTF8.GetPooledUtf8Bytes(password);
+#if NET5_0_OR_GREATER
+        Span<byte> hash = stackalloc byte[32];
+        if (System.Security.Cryptography.SHA256.TryHashData(bytes.AsSpan(), hash, out var bytesWritten))
+        {
+            if (bytesWritten != hash.Length)
+                throw new InvalidOperationException($"Unexpected hash length: {bytesWritten} bytes");
+        }
+        else
+        {
+            throw new InvalidOperationException("Failed to compute hash");
+        }
+        return Convert.ToBase64String(hash.Slice(0, bytesWritten));
+#elif NETSTANDARD2_1_OR_GREATER
         using var sha256 = System.Security.Cryptography.SHA256.Create();
-        var hash = sha256.ComputeHash(bytes);
+        var length = sha256.HashSize / 8; // HashSize 是以位为单位的，除以 8 转换为字节数
+        Span<byte> hash = stackalloc byte[length];
+        if (sha256.TryComputeHash(bytes.AsSpan(), hash, out var bytesWritten))
+        {
+            if (bytesWritten != hash.Length)
+                throw new InvalidOperationException($"Unexpected hash length: {bytesWritten} bytes");
+        }
+        else
+        {
+            throw new InvalidOperationException("Failed to compute hash");
+        }
+        return Convert.ToBase64String(hash.Slice(0, bytesWritten));
+#else
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        var hash = sha256.ComputeHash(bytes.Bytes, 0, bytes.Length);
         return Convert.ToBase64String(hash);
+#endif
     }
 }
 

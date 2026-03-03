@@ -1,4 +1,5 @@
-using System.Text;
+﻿using System.Text;
+using NewLife.NovaDb.Utilities;
 using NewLife.Security;
 
 namespace NewLife.NovaDb.Engine.Flux;
@@ -120,7 +121,8 @@ public partial class FluxEngine
             WriteString(bw, kv.Value);
         }
 
-        WriteFluxRecord(RecordType_FluxAppend, ms.ToArray());
+        var data = ms.ToArray();
+        WriteFluxRecord(RecordType_FluxAppend, data, 0, data.Length);
     }
 
     /// <summary>持久化 Purge 记录（删除过期分区）</summary>
@@ -129,12 +131,43 @@ public partial class FluxEngine
     {
         if (_fluxLogStream == null) return;
 
-        var data = Encoding.UTF8.GetBytes(cutoffKey);
-        WriteFluxRecord(RecordType_FluxPurge, data);
+        using var pooledUtf8Bytes = cutoffKey.ToPooledUtf8Bytes();
+#if NETSTANDARD2_1_OR_GREATER
+        WriteFluxRecord(RecordType_FluxPurge, pooledUtf8Bytes.AsSpan());
+#else
+        WriteFluxRecord(RecordType_FluxPurge, pooledUtf8Bytes.Bytes, 0, pooledUtf8Bytes.Length);
+#endif
     }
 
     /// <summary>写入一条记录</summary>
-    private void WriteFluxRecord(Byte recordType, Byte[] data)
+    private void WriteFluxRecord(Byte recordType, Byte[] data, int offset, int count)
+    {
+        var recordLength = 1 + count + 4;
+
+        using var ms = new MemoryStream(4 + recordLength);
+        using var bw = new BinaryWriter(ms);
+
+        bw.Write(recordLength);
+        bw.Write(recordType);
+        bw.Write(data, offset, count);
+
+        // CRC32 校验
+        var checkBuffer = new Byte[1 + count];
+        checkBuffer[0] = recordType;
+        //data.CopyTo(checkBuffer.AsSpan(1));
+        Array.Copy(data, offset, checkBuffer, 1, count);
+        var checksum = Crc32.Compute(checkBuffer, 0, checkBuffer.Length);
+        bw.Write(checksum);
+
+        var buffer = ms.ToArray();
+        _fluxLogStream!.Position = _fluxLogStream.Length;
+        _fluxLogStream.Write(buffer, 0, buffer.Length);
+        _fluxLogStream.Flush();
+    }
+
+#if NETSTANDARD2_1_OR_GREATER
+    /// <summary>写入一条记录</summary>
+    private void WriteFluxRecord(Byte recordType, ReadOnlySpan<Byte> data)
     {
         var recordLength = 1 + data.Length + 4;
 
@@ -148,7 +181,7 @@ public partial class FluxEngine
         // CRC32 校验
         var checkBuffer = new Byte[1 + data.Length];
         checkBuffer[0] = recordType;
-        Array.Copy(data, 0, checkBuffer, 1, data.Length);
+        data.CopyTo(checkBuffer.AsSpan(1));
         var checksum = Crc32.Compute(checkBuffer, 0, checkBuffer.Length);
         bw.Write(checksum);
 
@@ -157,6 +190,7 @@ public partial class FluxEngine
         _fluxLogStream.Write(buffer, 0, buffer.Length);
         _fluxLogStream.Flush();
     }
+#endif
 
     #endregion
 

@@ -1,4 +1,7 @@
-﻿using System.Collections.Concurrent;
+﻿using System.Buffers;
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using NewLife;
 using NewLife.Buffers;
@@ -18,6 +21,7 @@ namespace NewLife.NovaDb.Engine.KV;
 public partial class KvStore : IDisposable
 {
     #region 属性
+    private static readonly Encoding _encoding = Encoding.UTF8;
     private readonly ConcurrentDictionary<String, KvEntry> _data = new(StringComparer.Ordinal);
 #if NET9_0_OR_GREATER
     private readonly System.Threading.Lock _writeLock = new();
@@ -107,7 +111,7 @@ public partial class KvStore : IDisposable
 
         lock (_writeLock)
         {
-            var valueOffset = WriteSetRecordNoLock(key, value ?? [], expiresAt);
+            var valueOffset = WriteSetRecordNoLock(key, new ReadOnlySpan<Byte>(value ?? []), expiresAt);
             _data[key] = new KvEntry
             {
                 ValueOffset = valueOffset,
@@ -293,7 +297,7 @@ public partial class KvStore : IDisposable
     {
         if (value == null) throw new ArgumentNullException(nameof(value));
 
-        return Add(key, Encoding.UTF8.GetBytes(value), ttl);
+        return Add(key, _encoding.GetBytes(value), ttl);
     }
 
     /// <summary>替换并返回旧值（原子操作）</summary>
@@ -321,7 +325,7 @@ public partial class KvStore : IDisposable
                 expiresAt = ttl != null ? DateTime.UtcNow.Add(ttl.Value) : _defaultTtl != null ? DateTime.UtcNow.Add(_defaultTtl.Value) : DateTime.MaxValue;
             }
 
-            var valueOffset = WriteSetRecordNoLock(key, value ?? [], expiresAt);
+            var valueOffset = WriteSetRecordNoLock(key, new ReadOnlySpan<Byte>(value ?? []), expiresAt);
             _data[key] = new KvEntry
             {
                 ValueOffset = valueOffset,
@@ -364,7 +368,12 @@ public partial class KvStore : IDisposable
                 expiresAt = ttl != null ? DateTime.UtcNow.Add(ttl.Value) : _defaultTtl != null ? DateTime.UtcNow.Add(_defaultTtl.Value) : DateTime.MaxValue;
             }
 
-            var valueBytes = BitConverter.GetBytes(newValue);
+            //var valueBytes = BitConverter.GetBytes(newValue);
+            const int length = sizeof(long);
+            Span<byte> valueBytes = stackalloc byte[length];
+            //BitConverter.TryWriteBytes(valueBytes, newValue);
+            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(valueBytes), newValue);
+
             var valueOffset = WriteSetRecordNoLock(key, valueBytes, expiresAt);
             _data[key] = new KvEntry
             {
@@ -407,7 +416,12 @@ public partial class KvStore : IDisposable
                 expiresAt = ttl != null ? DateTime.UtcNow.Add(ttl.Value) : _defaultTtl != null ? DateTime.UtcNow.Add(_defaultTtl.Value) : DateTime.MaxValue;
             }
 
-            var valueBytes = BitConverter.GetBytes(newValue);
+            //var valueBytes = BitConverter.GetBytes(newValue);
+            const int length = sizeof(double);
+            Span<byte> valueBytes = stackalloc byte[length];
+            //BitConverter.TryWriteBytes(valueBytes, newValue);
+            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(valueBytes), newValue);
+
             var valueOffset = WriteSetRecordNoLock(key, valueBytes, expiresAt);
             _data[key] = new KvEntry
             {
@@ -466,7 +480,7 @@ public partial class KvStore : IDisposable
             {
                 if (String.IsNullOrEmpty(kvp.Key)) continue;
 
-                var valueOffset = WriteSetRecordNoLock(kvp.Key, kvp.Value ?? [], expiresAt);
+                var valueOffset = WriteSetRecordNoLock(kvp.Key, new ReadOnlySpan<Byte>(kvp.Value ?? []), expiresAt);
                 _data[kvp.Key] = new KvEntry
                 {
                     ValueOffset = valueOffset,
@@ -550,7 +564,7 @@ public partial class KvStore : IDisposable
             // 从磁盘读取当前值，以新 TTL 重新追加写入
             using var valuePk = ReadValueFromDiskNoLock(index);
             var value = valuePk?.ReadBytes() ?? [];
-            var valueOffset = WriteSetRecordNoLock(key, value, newExpiresAt);
+            var valueOffset = WriteSetRecordNoLock(key, new ReadOnlySpan<Byte>(value), newExpiresAt);
             _data[key] = new KvEntry
             {
                 ValueOffset = valueOffset,
