@@ -611,7 +611,7 @@ partial class SqlEngine
                 if (args.Count < 1 || args[0] == null) return null;
                 using (var md5 = System.Security.Cryptography.MD5.Create())
                 {
-                    using var bytes = Convert.ToString(args[0]).ToPooledUtf8Bytes();
+                    using var bytes = Convert.ToString(args[0])!.ToPooledUtf8Bytes();
                     var hash = md5.ComputeHash(bytes.Buffer, 0, bytes.Length);
                     return BitConverter.ToString(hash).Replace("-", String.Empty).ToLower();
                 }
@@ -620,7 +620,7 @@ partial class SqlEngine
                 if (args.Count < 1 || args[0] == null) return null;
                 using (var sha1 = System.Security.Cryptography.SHA1.Create())
                 {
-                    using var bytes = Convert.ToString(args[0]).ToPooledUtf8Bytes();
+                    using var bytes = Convert.ToString(args[0])!.ToPooledUtf8Bytes();
                     var hash = sha1.ComputeHash(bytes.Buffer, 0, bytes.Length);
                     return BitConverter.ToString(hash).Replace("-", String.Empty).ToLower();
                 }
@@ -635,7 +635,7 @@ partial class SqlEngine
                     _ => System.Security.Cryptography.SHA256.Create()
                 })
                 {
-                    using var bytes = Convert.ToString(args[0]).ToPooledUtf8Bytes();
+                    using var bytes = Convert.ToString(args[0])!.ToPooledUtf8Bytes();
                     var hash = sha2.ComputeHash(bytes.Buffer, 0, bytes.Length);
                     return BitConverter.ToString(hash).Replace("-", String.Empty).ToLower();
                 }
