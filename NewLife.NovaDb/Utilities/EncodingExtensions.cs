@@ -18,7 +18,7 @@ namespace NewLife.NovaDb.Utilities
 
         /// <summary>
         /// UTF-8 编码的字节数组长度，表示有效数据的长度。<br/>
-        /// 数组长度可能大于此值，因为它是从 <see cref="ArrayPool{byte}"/> 对象池租用的。
+        /// 数组长度可能大于此值，因为它是从 <see cref="ArrayPool{Byte}.Shared"/> 对象池租用的。
         /// </summary>
         public int Length { get; private set; }
 

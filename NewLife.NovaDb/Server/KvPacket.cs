@@ -17,6 +17,8 @@ namespace NewLife.NovaDb.Server;
 /// </remarks>
 internal static class KvPacket
 {
+    private static readonly Encoding _encoding = Encoding.UTF8;
+
     #region 编码请求
 
     /// <summary>编码 Set 请求</summary>
@@ -187,7 +189,7 @@ internal static class KvPacket
     public static IPacket EncodeGetAll(String tableName, String[] keys)
     {
         using var tableBytes = (tableName ?? "default").ToPooledUtf8Bytes();
-        var bufSize = 16 + tableBytes.Length + 4 + keys.Sum(k => 4 + Encoding.UTF8.GetByteCount(k));
+        var bufSize = 16 + tableBytes.Length + 4 + keys.Sum(k => 4 + _encoding.GetByteCount(k));
         var buf = new Byte[bufSize];
         var writer = new SpanWriter(buf, 0, bufSize);
         WriteString(ref writer, tableBytes.AsSpan());
@@ -205,7 +207,7 @@ internal static class KvPacket
     public static IPacket EncodeSetAll(String tableName, IDictionary<String, Byte[]?> values, Int32 ttlSeconds)
     {
         using var tableBytes = (tableName ?? "default").ToPooledUtf8Bytes();
-        var valueBytesLengthTotal = values.Sum(kvp => 8 + Encoding.UTF8.GetByteCount(kvp.Key) + kvp.Value?.Length ?? 0);
+        var valueBytesLengthTotal = values.Sum(kvp => 8 + _encoding.GetByteCount(kvp.Key) + kvp.Value?.Length ?? 0);
         var bufSize = 32 + tableBytes.Length + valueBytesLengthTotal;
         var buf = new Byte[bufSize];
         var writer = new SpanWriter(buf, 0, bufSize);
@@ -375,7 +377,7 @@ internal static class KvPacket
             return new ArrayPacket(emptyBuf, 0, 4);
         }
 
-        var bufSize = 4 + keys.Sum(k => 4 + Encoding.UTF8.GetByteCount(k));
+        var bufSize = 4 + keys.Sum(k => 4 + _encoding.GetByteCount(k));
         var buf = new Byte[bufSize];
         var writer = new SpanWriter(buf, 0, bufSize);
         writer.Write(keys.Length);
@@ -392,7 +394,7 @@ internal static class KvPacket
     public static IPacket EncodeGetAllResponse(String[] keys, IDictionary<String, IOwnerPacket?> data)
     {
         // 预估大小：count(4) + n * (keyLen(4)+keyBytes + valueFlag(1)+valueLen(4)+valueBytes)
-        var estSize = 4 + keys.Length * 16 + keys.Sum(k => Encoding.UTF8.GetByteCount(k));
+        var estSize = 4 + keys.Length * 16 + keys.Sum(k => _encoding.GetByteCount(k));
         foreach (var key in keys)
         {
             if (data.TryGetValue(key, out var pk) && pk != null)
@@ -526,7 +528,7 @@ internal static class KvPacket
     {
         var len = reader.ReadEncodedInt();
         if (len <= 0) return String.Empty;
-        return Encoding.UTF8.GetString(reader.ReadBytes(len));
+        return _encoding.GetString(reader.ReadBytes(len));
     }
 
     private static Byte[]? ReadNullableBytes(ref SpanReader reader)
