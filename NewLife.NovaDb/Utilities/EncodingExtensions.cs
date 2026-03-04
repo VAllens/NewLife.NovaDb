@@ -17,13 +17,13 @@ namespace NewLife.NovaDb.Utilities
 #endif
 
         /// <summary>
-        /// UTF-8 编码的字节数组长度，表示有效数据的长度。
-        /// 数组长度可能大于此值，因为它是从对象池租用的。
+        /// UTF-8 编码的字节数组长度，表示有效数据的长度。<br/>
+        /// 数组长度可能大于此值，因为它是从 <see cref="ArrayPool{byte}"/> 对象池租用的。
         /// </summary>
         public int Length { get; private set; }
 
         /// <summary>
-        /// 获取 UTF-8 编码的字节数组，长度由 <see cref="Length"/> 属性指定。
+        /// 获取 UTF-8 编码的字节数组，有效数据的长度由 <see cref="Length"/> 属性决定。<br/>
         /// 使用完毕后应调用 <see cref="Dispose"/> 方法归还数组到对象池。
         /// </summary>
         public byte[] Bytes { get; private set; }
