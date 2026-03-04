@@ -1,4 +1,4 @@
-using NewLife.NovaDb.Core;
+﻿using NewLife.NovaDb.Core;
 using NewLife.Security;
 
 namespace NewLife.NovaDb.Engine;
@@ -64,12 +64,24 @@ public partial class NovaTable
     /// <summary>写入行日志文件头（32 字节）</summary>
     private void WriteRowLogHeader()
     {
+#if NETSTANDARD2_1_OR_GREATER
+        Span<Byte> header = stackalloc Byte[RowLogHeaderSize];
+        RowLogMagic.AsSpan().CopyTo(header.Slice(0, 4));
+#else
         var header = new Byte[RowLogHeaderSize];
-        Array.Copy(RowLogMagic, 0, header, 0, 4);
+        RowLogMagic.AsSpan().CopyTo(header.AsSpan(0, 4));
+#endif
+
         header[4] = 1; // Version = 1
 
         _rowLogStream!.Position = 0;
+
+#if NETSTANDARD2_1_OR_GREATER
+        _rowLogStream.Write(header);
+#else
         _rowLogStream.Write(header, 0, header.Length);
+#endif
+
         _rowLogStream.Flush();
     }
 
@@ -79,8 +91,15 @@ public partial class NovaTable
         if (_rowLogStream!.Length < RowLogHeaderSize) return;
 
         _rowLogStream.Position = 0;
+
+#if NETSTANDARD2_1_OR_GREATER
+        Span<Byte> header = stackalloc Byte[RowLogHeaderSize];
+        var read = _rowLogStream.Read(header);
+#else
         var header = new Byte[RowLogHeaderSize];
         var read = _rowLogStream.Read(header, 0, header.Length);
+#endif
+
         if (read < RowLogHeaderSize) return;
 
         // 校验魔数

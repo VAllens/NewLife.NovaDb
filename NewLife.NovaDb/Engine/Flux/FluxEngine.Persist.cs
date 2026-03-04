@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Runtime.InteropServices.ComTypes;
+using System.Text;
 using NewLife.NovaDb.Utilities;
 using NewLife.Security;
 
@@ -65,12 +66,24 @@ public partial class FluxEngine
     /// <summary>写入文件头</summary>
     private void WriteFluxLogHeader()
     {
+#if NETSTANDARD2_1_OR_GREATER
+        Span<Byte> header = stackalloc Byte[FluxLogHeaderSize];
+        FluxLogMagic.AsSpan().CopyTo(header.Slice(0, 4));
+#else
         var header = new Byte[FluxLogHeaderSize];
-        Array.Copy(FluxLogMagic, 0, header, 0, 4);
+        FluxLogMagic.AsSpan().CopyTo(header.AsSpan(0, 4));
+#endif
+
         header[4] = 1; // Version
 
         _fluxLogStream!.Position = 0;
+
+#if NETSTANDARD2_1_OR_GREATER
+        _fluxLogStream.Write(header);
+#else
         _fluxLogStream.Write(header, 0, header.Length);
+#endif
+
         _fluxLogStream.Flush();
     }
 
@@ -80,9 +93,13 @@ public partial class FluxEngine
         if (_fluxLogStream!.Length < FluxLogHeaderSize) return;
 
         _fluxLogStream.Position = 0;
+#if NETSTANDARD2_1_OR_GREATER
+        Span<Byte> header = stackalloc Byte[FluxLogHeaderSize];
+        if (_fluxLogStream.Read(header) < FluxLogHeaderSize) return;
+#else
         var header = new Byte[FluxLogHeaderSize];
         if (_fluxLogStream.Read(header, 0, header.Length) < FluxLogHeaderSize) return;
-
+#endif
         if (header[0] != FluxLogMagic[0] || header[1] != FluxLogMagic[1] ||
             header[2] != FluxLogMagic[2] || header[3] != FluxLogMagic[3])
             throw new InvalidOperationException("Invalid Flux log file header");
