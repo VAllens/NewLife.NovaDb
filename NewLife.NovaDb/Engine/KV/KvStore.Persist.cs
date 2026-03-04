@@ -88,11 +88,20 @@ public partial class KvStore
             CreateTime = DateTime.UtcNow,
         };
 
+#if NETSTANDARD2_1_OR_GREATER
+        Span<Byte> buf = stackalloc Byte[FileHeaderSize];
+#else
         var buf = new Byte[FileHeaderSize];
+#endif
         header.Write(buf);
 
         _fileStream!.Position = 0;
+
+#if NETSTANDARD2_1_OR_GREATER
+        _fileStream.Write(buf);
+#else
         _fileStream.Write(buf, 0, buf.Length);
+#endif
         _fileStream.Flush();
     }
 
@@ -102,8 +111,14 @@ public partial class KvStore
         if (_fileStream!.Length < FileHeaderSize) return;
 
         _fileStream.Position = 0;
+
+#if NETSTANDARD2_1_OR_GREATER
+        Span<Byte> buf = stackalloc Byte[FileHeaderSize];
+        if (_fileStream.Read(buf) < FileHeaderSize) return;
+#else
         var buf = new Byte[FileHeaderSize];
         if (_fileStream.Read(buf, 0, buf.Length) < FileHeaderSize) return;
+#endif
 
         var header = FileHeader.Read(buf);
         if (header.FileType != FileType.KvData)
@@ -499,9 +514,15 @@ public partial class KvStore
                     PageSize = 1,
                     CreateTime = DateTime.UtcNow,
                 };
+#if NETSTANDARD2_1_OR_GREATER
+                Span<Byte> headerBuf = stackalloc Byte[FileHeaderSize];
+                header.Write(headerBuf);
+                tempStream.Write(headerBuf);
+#else
                 var headerBuf = new Byte[FileHeaderSize];
                 header.Write(headerBuf);
                 tempStream.Write(headerBuf, 0, headerBuf.Length);
+#endif
 
                 foreach (var kvp in _data)
                 {
@@ -554,5 +575,5 @@ public partial class KvStore
             _compacting = false;
         }
     }
-    #endregion
+#endregion
 }
