@@ -250,7 +250,7 @@ public partial class KvStore : IDisposable
     {
         if (value == null) throw new ArgumentNullException(nameof(value));
 
-        using var pooledUtf8Bytes = _encoding.GetPooledUtf8Bytes(value);
+        using var pooledUtf8Bytes = _encoding.GetPooledEncodedBytes(value);
         Set(key, pooledUtf8Bytes.AsSpan(), ttl);
     }
 
@@ -314,7 +314,7 @@ public partial class KvStore : IDisposable
     {
         if (value == null) throw new ArgumentNullException(nameof(value));
 
-        using var pooledUtf8Bytes = _encoding.GetPooledUtf8Bytes(value);
+        using var pooledUtf8Bytes = _encoding.GetPooledEncodedBytes(value);
         return Add(key, pooledUtf8Bytes.AsSpan(), ttl);
     }
 

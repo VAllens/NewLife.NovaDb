@@ -216,8 +216,8 @@ internal static class KvPacket
         writer.Write(values.Count);
         foreach (var keyValuePair in values)
         {
-            using var pooledKeyBytes = keyValuePair.Key.ToPooledUtf8Bytes();
-            WriteString(ref writer, pooledKeyBytes.AsSpan());
+            using (var pooledKeyBytes = keyValuePair.Key.ToPooledUtf8Bytes())
+                WriteString(ref writer, pooledKeyBytes.AsSpan());
             WriteNullableBytes(ref writer, keyValuePair.Value);
         }
         return new ArrayPacket(buf, 0, writer.Position);

@@ -161,7 +161,7 @@ public partial class KvStore
     /// <returns>值在文件中的偏移（若值为空则返回 -1）</returns>
     private static Int64 WriteSetRecordToStream(FileStream target, String key, ReadOnlySpan<Byte> value, DateTime expiresAt)
     {
-        var pooledKeyBytes = _encoding.GetPooledUtf8Bytes(key);
+        var pooledKeyBytes = _encoding.GetPooledEncodedBytes(key);
         var valueLen = value.Length;
 
         // Record: [TotalLength: 4B] [RecordType: 1B] [KeyLen: 2B] [Key] [ExpiresAt: 8B] [ValueLen: 4B] [Value] [CRC32: 4B]
@@ -203,7 +203,7 @@ public partial class KvStore
     /// <param name="key">键</param>
     private void WriteDeleteRecordNoLock(String key)
     {
-        var pooledKeyBytes = _encoding.GetPooledUtf8Bytes(key);
+        var pooledKeyBytes = _encoding.GetPooledEncodedBytes(key);
 
         // Delete: [TotalLength: 4B] [RecordType: 1B] [KeyLen: 2B] [Key] [CRC32: 4B]
         var totalLength = 1 + 2 + pooledKeyBytes.Length + 4;

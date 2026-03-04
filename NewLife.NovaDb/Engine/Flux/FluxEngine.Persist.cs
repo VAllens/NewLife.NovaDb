@@ -140,7 +140,7 @@ public partial class FluxEngine
         if (_fluxLogStream == null) return;
 
         using var pooledUtf8Bytes = cutoffKey.ToPooledUtf8Bytes();
-        WriteFluxRecord(RecordType_FluxPurge, pooledUtf8Bytes.Bytes, 0, pooledUtf8Bytes.Length);
+        WriteFluxRecord(RecordType_FluxPurge, pooledUtf8Bytes.Buffer, 0, pooledUtf8Bytes.Length);
     }
 
     private void WriteFluxRecord(byte recordType, Byte[] data, int offset, int count)

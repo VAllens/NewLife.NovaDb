@@ -26,18 +26,18 @@ namespace NewLife.NovaDb.Utilities
         /// 获取 UTF-8 编码的字节数组，有效数据的长度由 <see cref="Length"/> 属性决定。<br/>
         /// 使用完毕后应调用 <see cref="Dispose"/> 方法归还数组到对象池。
         /// </summary>
-        public byte[] Bytes { get; private set; }
+        public byte[] Buffer { get; private set; }
 
         public PooledUtf8Bytes()
         {
             Length = 0;
-            Bytes = EmptyBytes;
+            Buffer = EmptyBytes;
         }
 
-        public PooledUtf8Bytes(byte[] pooledBytes, int length)
+        internal PooledUtf8Bytes(byte[] pooledBytes, int length)
         {
             Length = length;
-            Bytes = pooledBytes;
+            Buffer = pooledBytes;
         }
 
 #if NETSTANDARD2_1_OR_GREATER
@@ -46,13 +46,13 @@ namespace NewLife.NovaDb.Utilities
             if (value.IsEmpty)
             {
                 Length = 0;
-                Bytes = EmptyBytes;
+                Buffer = EmptyBytes;
             }
             else
             {
                  Length = Encoding.GetByteCount(value); // GetByteCount函数在.NET Standard 2.0版本中不支持 ReadOnlySpan<char> 参数
-                 Bytes = ArrayPool<byte>.Shared.Rent(Length);
-                 Encoding.GetBytes(value, Bytes);
+                 Buffer = ArrayPool<byte>.Shared.Rent(Length);
+                 Encoding.GetBytes(value, Buffer);
             }
         }
 #endif
@@ -62,29 +62,32 @@ namespace NewLife.NovaDb.Utilities
             if (string.IsNullOrEmpty(value))
             {
                 Length = 0;
-                Bytes = EmptyBytes;
+                Buffer = EmptyBytes;
             }
             else
             {
                 Length = Encoding.GetByteCount(value);
-                Bytes = ArrayPool<byte>.Shared.Rent(Length);
-                Encoding.GetBytes(value, 0, value.Length, Bytes, 0);
+                Buffer = ArrayPool<byte>.Shared.Rent(Length);
+                Encoding.GetBytes(value, 0, value.Length, Buffer, 0);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ReadOnlySpan<byte> AsSpan() => Length == 0 ? ReadOnlySpan<byte>.Empty : Bytes.AsSpan(0, Length);
+        public ReadOnlySpan<byte> AsSpan() => Length == 0 ? ReadOnlySpan<byte>.Empty : Buffer.AsSpan(0, Length);
 
         public void Dispose()
         {
-            if (Bytes == null || Bytes.Length == 0) return;
-            ArrayPool<byte>.Shared.Return(Bytes);
-            Bytes = EmptyBytes;
+            if (Buffer == null || Buffer.Length == 0) return;
+            ArrayPool<byte>.Shared.Return(Buffer);
+            Buffer = EmptyBytes;
             Length = 0;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static implicit operator ReadOnlySpan<byte>(PooledUtf8Bytes pooledBytes) => pooledBytes.AsSpan();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static implicit operator PooledUtf8Bytes(string value) => new PooledUtf8Bytes(value);
     }
 
     /// <summary>
@@ -105,7 +108,7 @@ namespace NewLife.NovaDb.Utilities
         /// <param name="encoding">要使用的编码。</param>
         /// <param name="value">要转换的字符串。</param>
         /// <returns>返回一个 <see cref="PooledUtf8Bytes"/> 实例，包含指定编码的字节数组。</returns>
-        public static PooledUtf8Bytes GetPooledUtf8Bytes(this Encoding encoding, string value)
+        public static PooledUtf8Bytes GetPooledEncodedBytes(this Encoding encoding, string value)
         {
             var length = encoding.GetByteCount(value);
             var pooledBytes = ArrayPool<byte>.Shared.Rent(length);

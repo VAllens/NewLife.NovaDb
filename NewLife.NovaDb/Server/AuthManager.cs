@@ -235,7 +235,7 @@ public class AuthManager
     /// <summary>密码哈希（SHA256）</summary>
     private static String HashPassword(String password)
     {
-        using var bytes = System.Text.Encoding.UTF8.GetPooledUtf8Bytes(password);
+        using var bytes = System.Text.Encoding.UTF8.GetPooledEncodedBytes(password);
 #if NET5_0_OR_GREATER
         Span<byte> hash = stackalloc byte[32];
         if (System.Security.Cryptography.SHA256.TryHashData(bytes.AsSpan(), hash, out var bytesWritten))
@@ -264,7 +264,7 @@ public class AuthManager
         return Convert.ToBase64String(hash.Slice(0, bytesWritten));
 #else
         using var sha256 = System.Security.Cryptography.SHA256.Create();
-        var hash = sha256.ComputeHash(bytes.Bytes, 0, bytes.Length);
+        var hash = sha256.ComputeHash(bytes.Buffer, 0, bytes.Length);
         return Convert.ToBase64String(hash);
 #endif
     }
