@@ -287,8 +287,6 @@ public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<
     /// <returns>返回逗号分隔的坐标对数量，忽略空项；如果格式不正确（如缺少 POLYGON((...)) 包装），也会尽量统计逗号分隔的项数，而不是抛异常。</returns>
     public static Int32 GetPolygonWktCount(ReadOnlySpan<Char> wkt)
     {
-        if (wkt == null) return 0;
-
         wkt = wkt.Trim();
         if (wkt.IsEmpty) return 0;
 
