@@ -621,9 +621,9 @@ partial class SqlEngine
                 var sha2Bits = args.Count >= 2 && args[1] != null ? Convert.ToInt32(args[1]) : 256;
                 return sha2Bits switch
                 {
-                    384 => HashHelper.Sha384ToHex(Convert.ToString(args[0])),
-                    512 => HashHelper.Sha512ToHex(Convert.ToString(args[0])),
-                    _ => HashHelper.Sha256ToHex(Convert.ToString(args[0]))
+                    384 => HashHelper.Sha384ToHex(Convert.ToString(args[0])!),
+                    512 => HashHelper.Sha512ToHex(Convert.ToString(args[0])!),
+                    _ => HashHelper.Sha256ToHex(Convert.ToString(args[0])!)
                 };
 
             // GeoPoint 函数
@@ -641,7 +641,8 @@ partial class SqlEngine
 
             case "WITHIN_RADIUS":
                 if (args.Count < 3 || args[0] == null || args[1] == null || args[2] == null) return null;
-                return ((GeoPoint)args[0]!).WithinRadius((GeoPoint)args[1]!, Convert.ToDouble(args[2]));
+                var center = (GeoPoint)args[1]!;
+                return ((GeoPoint)args[0]!).WithinRadius(in center, Convert.ToDouble(args[2]));
 
             case "WITHIN_POLYGON":
                 if (args.Count < 2 || args[0] == null || args[1] == null) return null;

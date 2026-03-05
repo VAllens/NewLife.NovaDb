@@ -116,5 +116,16 @@ namespace NewLife.NovaDb.Utilities
 
             return new String(chars);
         }
+
+        private enum HashAlgorithmName
+        {
+            // ReSharper disable InconsistentNaming
+            MD5,
+            SHA1,
+            SHA256,
+            SHA384,
+            SHA512
+            // ReSharper restore InconsistentNaming
+        }
     }
 }
