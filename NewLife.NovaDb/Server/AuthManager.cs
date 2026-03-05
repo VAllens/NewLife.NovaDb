@@ -1,4 +1,5 @@
-﻿using NewLife.NovaDb.Core;
+﻿using System.Runtime.CompilerServices;
+using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Utilities;
 
 namespace NewLife.NovaDb.Server;
@@ -232,13 +233,8 @@ public class AuthManager
     }
 
     /// <summary>密码哈希（SHA256）</summary>
-    private static String HashPassword(String password)
-    {
-        using var sha256 = System.Security.Cryptography.SHA256.Create();
-        using var bytes = System.Text.Encoding.UTF8.GetPooledEncodedBytes(password);
-        var hash = sha256.ComputeHash(bytes.Buffer, 0, bytes.Length);
-        return Convert.ToBase64String(hash);
-    }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static String HashPassword(String password) => HashHelper.Sha256ToBase64(password);
 }
 
 /// <summary>用户信息</summary>

@@ -589,36 +589,21 @@ partial class SqlEngine
             // 哈希函数
             case "MD5":
                 if (args.Count < 1 || args[0] == null) return null;
-                using (var md5 = System.Security.Cryptography.MD5.Create())
-                {
-                    using var bytes = Convert.ToString(args[0])!.ToPooledUtf8Bytes();
-                    var hash = md5.ComputeHash(bytes.Buffer, 0, bytes.Length);
-                    return BitConverter.ToString(hash).Replace("-", String.Empty).ToLower();
-                }
+                return HashHelper.Md5ToHex(Convert.ToString(args[0])!);
 
             case "SHA1":
                 if (args.Count < 1 || args[0] == null) return null;
-                using (var sha1 = System.Security.Cryptography.SHA1.Create())
-                {
-                    using var bytes = Convert.ToString(args[0])!.ToPooledUtf8Bytes();
-                    var hash = sha1.ComputeHash(bytes.Buffer, 0, bytes.Length);
-                    return BitConverter.ToString(hash).Replace("-", String.Empty).ToLower();
-                }
+                return HashHelper.Sha1ToHex(Convert.ToString(args[0])!);
 
             case "SHA2":
                 if (args.Count < 1 || args[0] == null) return null;
                 var sha2Bits = args.Count >= 2 && args[1] != null ? Convert.ToInt32(args[1]) : 256;
-                using (var sha2 = sha2Bits switch
+                return sha2Bits switch
                 {
-                    384 => (System.Security.Cryptography.HashAlgorithm)System.Security.Cryptography.SHA384.Create(),
-                    512 => System.Security.Cryptography.SHA512.Create(),
-                    _ => System.Security.Cryptography.SHA256.Create()
-                })
-                {
-                    using var bytes = Convert.ToString(args[0])!.ToPooledUtf8Bytes();
-                    var hash = sha2.ComputeHash(bytes.Buffer, 0, bytes.Length);
-                    return BitConverter.ToString(hash).Replace("-", String.Empty).ToLower();
-                }
+                    384 => HashHelper.Sha384ToHex(Convert.ToString(args[0])),
+                    512 => HashHelper.Sha512ToHex(Convert.ToString(args[0])),
+                    _ => HashHelper.Sha256ToHex(Convert.ToString(args[0]))
+                };
 
             // GeoPoint 函数
             case "GEOPOINT":
