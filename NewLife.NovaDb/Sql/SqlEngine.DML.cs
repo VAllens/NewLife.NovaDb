@@ -1,6 +1,4 @@
-using NewLife.NovaDb.Core;
-using NewLife.NovaDb.Engine;
-using NewLife.NovaDb.Tx;
+﻿using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Sql;
 

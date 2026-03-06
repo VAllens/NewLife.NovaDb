@@ -1,6 +1,4 @@
-using System.Threading;
-
-namespace NewLife.NovaDb.Core;
+﻿namespace NewLife.NovaDb.Core;
 
 /// <summary>元数据读写锁，用于 DDL 与 DML/SELECT 的并发控制</summary>
 /// <remarks>

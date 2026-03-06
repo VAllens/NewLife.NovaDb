@@ -1,5 +1,4 @@
-﻿using NewLife;
-using NewLife.Data;
+﻿using NewLife.Data;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Storage;

@@ -1,6 +1,4 @@
-﻿using System.Linq;
-
-namespace NewLife.NovaDb.Engine;
+﻿namespace NewLife.NovaDb.Engine;
 
 /// <summary>冷段目录项（稀疏索引）</summary>
 public class ColdDirectoryEntry

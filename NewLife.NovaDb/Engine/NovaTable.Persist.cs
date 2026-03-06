@@ -1,5 +1,4 @@
-﻿using System.Buffers.Binary;
-using NewLife.NovaDb.Core;
+﻿using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Utilities;
 using NewLife.Security;
 

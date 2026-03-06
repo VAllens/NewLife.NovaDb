@@ -1,6 +1,4 @@
-﻿using System.Linq;
-
-namespace NewLife.NovaDb.Tx;
+﻿namespace NewLife.NovaDb.Tx;
 
 /// <summary>事务管理器，负责分配事务 ID 和提交时间戳</summary>
 public class TransactionManager

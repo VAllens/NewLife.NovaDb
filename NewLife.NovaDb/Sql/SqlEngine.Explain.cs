@@ -1,6 +1,4 @@
-﻿using NewLife.NovaDb.Core;
-
-namespace NewLife.NovaDb.Sql;
+﻿namespace NewLife.NovaDb.Sql;
 
 /// <summary>EXPLAIN 查询计划执行器</summary>
 public partial class SqlEngine

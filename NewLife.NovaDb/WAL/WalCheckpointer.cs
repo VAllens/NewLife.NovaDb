@@ -1,6 +1,4 @@
-using NewLife.NovaDb.Core;
-
-namespace NewLife.NovaDb.WAL;
+﻿namespace NewLife.NovaDb.WAL;
 
 /// <summary>WAL 检查点管理器</summary>
 /// <remarks>
