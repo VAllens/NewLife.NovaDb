@@ -323,4 +323,29 @@ public class DataCodecTests
         var value = new Single[] { 1.0f, 2.0f, 3.0f };
         Assert.Equal(4 + 3 * 4, _codec.GetEncodedLength(value, DataType.Vector));
     }
+
+    [Fact]
+    public void TestEncodeVectorWithBuffer()
+    {
+        var value = new Single[] { 1.0f, 2.0f, 3.0f };
+        var length = _codec.GetEncodedLength(value, DataType.Vector);
+        Assert.Equal(4 + 3 * 4, length);
+
+        var buffer = new Byte[length];
+        length = _codec.Encode(value, DataType.Vector, buffer, 0);
+        Assert.Equal(4 + 3 * 4, length);
+
+        var encoded = _codec.Encode(value, DataType.Vector);
+        Assert.Equal(encoded, buffer);
+    }
+
+    [Fact]
+    public void TestEncodeVectorWithShortBuffer()
+    {
+        var value = new Single[] { 1.0f, 2.0f, 3.0f };
+        var length = _codec.GetEncodedLength(value, DataType.Vector);
+        Assert.Equal(4 + 3 * 4, length);
+        var buffer = new Byte[length - 1]; // 故意比需要的长度短1字节
+        Assert.Throws<ArgumentException>(() => _codec.Encode(value, DataType.Vector, buffer, 0));
+    }
 }
