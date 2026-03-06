@@ -1,7 +1,6 @@
 ﻿using NewLife.NovaDb.Cluster;
 using NewLife.NovaDb.Sql;
 using NewLife.NovaDb.Tx;
-using NewLife.NovaDb.WAL;
 using NewLife.Remoting;
 
 namespace NewLife.NovaDb.Server;

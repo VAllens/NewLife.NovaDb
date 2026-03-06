@@ -1,6 +1,5 @@
 ﻿using System.Buffers;
 using System.Buffers.Binary;
-using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using NewLife.NovaDb.Utilities;
 using NewLife.Security;

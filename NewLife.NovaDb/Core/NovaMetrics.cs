@@ -1,6 +1,4 @@
-using System.Threading;
-
-namespace NewLife.NovaDb.Core;
+﻿namespace NewLife.NovaDb.Core;
 
 /// <summary>NovaDb 运行时指标</summary>
 /// <remarks>所有计数器均为线程安全，支持多线程并发递增</remarks>
