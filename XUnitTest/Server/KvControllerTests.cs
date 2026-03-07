@@ -51,49 +51,94 @@ public class KvControllerTests : IDisposable
     #region 辅助方法（封装 IPacket 协议调用）
 
     private Boolean CtrlSet(String tableName, String key, Byte[]? value, Int32 ttl = 0)
-        => KvPacket.DecodeBoolean(_controller.Set(KvPacket.EncodeSet(tableName, key, value, ttl)));
+    {
+        using var pk = KvPacket.EncodeSet(tableName, key, value, ttl);
+        return KvPacket.DecodeBoolean(_controller.Set(pk));
+    }
 
     private Byte[]? CtrlGet(String tableName, String key)
-        => KvPacket.DecodeNullableValue(_controller.Get(KvPacket.EncodeTableKey(tableName, key)));
+    {
+        using var pk = KvPacket.EncodeTableKey(tableName, key);
+        return KvPacket.DecodeNullableValue(_controller.Get(pk));
+    }
 
     private Boolean CtrlDelete(String tableName, String key)
-        => KvPacket.DecodeBoolean(_controller.Delete(KvPacket.EncodeTableKey(tableName, key)));
+    {
+        using var pk = KvPacket.EncodeTableKey(tableName, key);
+        return KvPacket.DecodeBoolean(_controller.Delete(pk));
+    }
 
     private Boolean CtrlExists(String tableName, String key)
-        => KvPacket.DecodeBoolean(_controller.Exists(KvPacket.EncodeTableKey(tableName, key)));
+    {
+        using var pk = KvPacket.EncodeTableKey(tableName, key);
+        return KvPacket.DecodeBoolean(_controller.Exists(pk));
+    }
 
     private Int32 CtrlDeleteByPattern(String tableName, String pattern)
-        => KvPacket.DecodeInt32(_controller.DeleteByPattern(KvPacket.EncodeDeleteByPattern(tableName, pattern)));
+    {
+        using var pk = KvPacket.EncodeDeleteByPattern(tableName, pattern);
+        return KvPacket.DecodeInt32(_controller.DeleteByPattern(pk));
+    }
 
     private Int32 CtrlGetCount(String tableName)
-        => KvPacket.DecodeInt32(_controller.GetCount(KvPacket.EncodeTableOnly(tableName)));
+    {
+        using var pk = KvPacket.EncodeTableOnly(tableName);
+        return KvPacket.DecodeInt32(_controller.GetCount(pk));
+    }
 
     private String[] CtrlGetAllKeys(String tableName)
-        => KvPacket.DecodeStringArray(_controller.GetAllKeys(KvPacket.EncodeTableOnly(tableName)));
+    {
+        using var pk = KvPacket.EncodeTableOnly(tableName);
+        return KvPacket.DecodeStringArray(_controller.GetAllKeys(pk));
+    }
 
     private void CtrlClear(String tableName)
-        => _controller.Clear(KvPacket.EncodeTableOnly(tableName));
+    {
+        using var pk = KvPacket.EncodeTableOnly(tableName);
+        _controller.Clear(pk);
+    }
 
     private Boolean CtrlSetExpire(String tableName, String key, Int32 ttlSeconds)
-        => KvPacket.DecodeBoolean(_controller.SetExpire(KvPacket.EncodeSetExpire(tableName, key, ttlSeconds)));
+    {
+        using var pk = KvPacket.EncodeSetExpire(tableName, key, ttlSeconds);
+        return KvPacket.DecodeBoolean(_controller.SetExpire(pk));
+    }
 
     private Double CtrlGetExpire(String tableName, String key)
-        => KvPacket.DecodeDouble(_controller.GetExpire(KvPacket.EncodeTableKey(tableName, key)));
+    {
+        using var pk = KvPacket.EncodeTableKey(tableName, key);
+        return KvPacket.DecodeDouble(_controller.GetExpire(pk));
+    }
 
     private Int64 CtrlIncrement(String tableName, String key, Int64 delta)
-        => KvPacket.DecodeInt64(_controller.Increment(KvPacket.EncodeIncrement(tableName, key, delta)));
+    {
+        using var pk = KvPacket.EncodeIncrement(tableName, key, delta);
+        return KvPacket.DecodeInt64(_controller.Increment(pk));
+    }
 
     private Double CtrlIncrementDouble(String tableName, String key, Double delta)
-        => KvPacket.DecodeDouble(_controller.IncrementDouble(KvPacket.EncodeIncrementDouble(tableName, key, delta)));
+    {
+        using var pk = KvPacket.EncodeIncrementDouble(tableName, key, delta);
+        return KvPacket.DecodeDouble(_controller.IncrementDouble(pk));
+    }
 
     private String[] CtrlSearch(String tableName, String pattern, Int32 offset = 0, Int32 count = -1)
-        => KvPacket.DecodeStringArray(_controller.Search(KvPacket.EncodeSearch(tableName, pattern, offset, count)));
+    {
+        using var pk = KvPacket.EncodeSearch(tableName, pattern, offset, count);
+        return KvPacket.DecodeStringArray(_controller.Search(pk));
+    }
 
     private IDictionary<String, Byte[]?> CtrlGetAll(String tableName, String[] keys)
-        => KvPacket.DecodeGetAllResponse(_controller.GetAll(KvPacket.EncodeGetAll(tableName, keys)));
+    {
+        using var pk = KvPacket.EncodeGetAll(tableName, keys);
+        return KvPacket.DecodeGetAllResponse(_controller.GetAll(pk));
+    }
 
     private Int32 CtrlSetAll(String tableName, IDictionary<String, Byte[]?> values, Int32 ttl = 0)
-        => KvPacket.DecodeInt32(_controller.SetAll(KvPacket.EncodeSetAll(tableName, values, ttl)));
+    {
+        using var pk = KvPacket.EncodeSetAll(tableName, values, ttl);
+        return KvPacket.DecodeInt32(_controller.SetAll(pk));
+    }
 
     #endregion
 

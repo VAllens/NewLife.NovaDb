@@ -28,20 +28,20 @@ internal static class KvPacket
     #region 编码请求
 
     /// <summary>编码 Set 请求</summary>
-    public static IPacket EncodeSet(String tableName, String key, Byte[]? value, Int32 ttlSeconds)
+    public static IOwnerPacket EncodeSet(String tableName, String key, Byte[]? value, Int32 ttlSeconds)
     {
         var tableBytes = _encoding.GetPooledEncodedBytes(tableName ?? "default");
         var keyBytes = _encoding.GetPooledEncodedBytes(key);
         try
         {
             var bufSize = 32 + tableBytes.Length + keyBytes.Length + (value?.Length ?? 0);
-            var buf = new Byte[bufSize];
-            var writer = new SpanWriter(buf, 0, bufSize);
+            var pk = new OwnerPacket(bufSize);
+            var writer = new SpanWriter(pk);
             WriteString(ref writer, tableBytes.AsSpan());
             WriteString(ref writer, keyBytes.AsSpan());
             WriteNullableBytes(ref writer, value);
             writer.Write(ttlSeconds);
-            return new ArrayPacket(buf, 0, writer.Position);
+            return pk.Resize(writer.Position);
         }
         finally
         {
@@ -51,18 +51,18 @@ internal static class KvPacket
     }
 
     /// <summary>编码 Get / Delete / Exists 请求（tableName + key）</summary>
-    public static IPacket EncodeTableKey(String tableName, String key)
+    public static IOwnerPacket EncodeTableKey(String tableName, String key)
     {
         var tableBytes = _encoding.GetPooledEncodedBytes(tableName ?? "default");
         var keyBytes = _encoding.GetPooledEncodedBytes(key);
         try
         {
             var bufSize = 16 + tableBytes.Length + keyBytes.Length;
-            var buf = new Byte[bufSize];
-            var writer = new SpanWriter(buf, 0, bufSize);
+            var pk = new OwnerPacket(bufSize);
+            var writer = new SpanWriter(pk);
             WriteString(ref writer, tableBytes.AsSpan());
             WriteString(ref writer, keyBytes.AsSpan());
-            return new ArrayPacket(buf, 0, writer.Position);
+            return pk.Resize(writer.Position);
         }
         finally
         {
@@ -72,29 +72,30 @@ internal static class KvPacket
     }
 
     /// <summary>编码仅含 tableName 的请求（GetCount / GetAllKeys / Clear）</summary>
-    public static IPacket EncodeTableOnly(String tableName)
+    public static IOwnerPacket EncodeTableOnly(String tableName)
     {
         using var tableBytes = _encoding.GetPooledEncodedBytes(tableName ?? "default");
-        var buf = new Byte[8 + tableBytes.Length];
-        var writer = new SpanWriter(buf, 0, buf.Length);
+        var bufSize = 8 + tableBytes.Length;
+        var pk = new OwnerPacket(bufSize);
+        var writer = new SpanWriter(pk);
         WriteString(ref writer, tableBytes.AsSpan());
-        return new ArrayPacket(buf, 0, writer.Position);
+        return pk.Resize(writer.Position);
     }
 
     /// <summary>编码 SetExpire 请求（tableName + key + ttlSeconds）</summary>
-    public static IPacket EncodeSetExpire(String tableName, String key, Int32 ttlSeconds)
+    public static IOwnerPacket EncodeSetExpire(String tableName, String key, Int32 ttlSeconds)
     {
         var tableBytes = _encoding.GetPooledEncodedBytes(tableName ?? "default");
         var keyBytes = _encoding.GetPooledEncodedBytes(key);
         try
         {
             var bufSize = 16 + tableBytes.Length + keyBytes.Length;
-            var buf = new Byte[bufSize];
-            var writer = new SpanWriter(buf, 0, bufSize);
+            var pk = new OwnerPacket(bufSize);
+            var writer = new SpanWriter(pk);
             WriteString(ref writer, tableBytes.AsSpan());
             WriteString(ref writer, keyBytes.AsSpan());
             writer.Write(ttlSeconds);
-            return new ArrayPacket(buf, 0, writer.Position);
+            return pk.Resize(writer.Position);
         }
         finally
         {
@@ -104,19 +105,19 @@ internal static class KvPacket
     }
 
     /// <summary>编码 Increment 请求（tableName + key + Int64 delta）</summary>
-    public static IPacket EncodeIncrement(String tableName, String key, Int64 delta)
+    public static IOwnerPacket EncodeIncrement(String tableName, String key, Int64 delta)
     {
         var tableBytes = _encoding.GetPooledEncodedBytes(tableName ?? "default");
         var keyBytes = _encoding.GetPooledEncodedBytes(key);
         try
         {
             var bufSize = 24 + tableBytes.Length + keyBytes.Length;
-            var buf = new Byte[bufSize];
-            var writer = new SpanWriter(buf, 0, bufSize);
+            var pk = new OwnerPacket(bufSize);
+            var writer = new SpanWriter(pk);
             WriteString(ref writer, tableBytes.AsSpan());
             WriteString(ref writer, keyBytes.AsSpan());
             writer.Write(delta);
-            return new ArrayPacket(buf, 0, writer.Position);
+            return pk.Resize(writer.Position);
         }
         finally
         {
@@ -126,19 +127,19 @@ internal static class KvPacket
     }
 
     /// <summary>编码 IncrementDouble 请求（tableName + key + Double delta）</summary>
-    public static IPacket EncodeIncrementDouble(String tableName, String key, Double delta)
+    public static IOwnerPacket EncodeIncrementDouble(String tableName, String key, Double delta)
     {
         var tableBytes = _encoding.GetPooledEncodedBytes(tableName ?? "default");
         var keyBytes = _encoding.GetPooledEncodedBytes(key);
         try
         {
             var bufSize = 24 + tableBytes.Length + keyBytes.Length;
-            var buf = new Byte[bufSize];
-            var writer = new SpanWriter(buf, 0, bufSize);
+            var pk = new OwnerPacket(bufSize);
+            var writer = new SpanWriter(pk);
             WriteString(ref writer, tableBytes.AsSpan());
             WriteString(ref writer, keyBytes.AsSpan());
             writer.Write(delta);
-            return new ArrayPacket(buf, 0, writer.Position);
+            return pk.Resize(writer.Position);
         }
         finally
         {
@@ -148,20 +149,20 @@ internal static class KvPacket
     }
 
     /// <summary>编码 Search 请求（tableName + pattern + offset + count）</summary>
-    public static IPacket EncodeSearch(String tableName, String pattern, Int32 offset, Int32 count)
+    public static IOwnerPacket EncodeSearch(String tableName, String pattern, Int32 offset, Int32 count)
     {
         var tableBytes = _encoding.GetPooledEncodedBytes(tableName ?? "default");
         var patternBytes = _encoding.GetPooledEncodedBytes(pattern);
         try
         {
             var bufSize = 24 + tableBytes.Length + patternBytes.Length;
-            var buf = new Byte[bufSize];
-            var writer = new SpanWriter(buf, 0, bufSize);
+            var pk = new OwnerPacket(bufSize);
+            var writer = new SpanWriter(pk);
             WriteString(ref writer, tableBytes.AsSpan());
             WriteString(ref writer, patternBytes.AsSpan());
             writer.Write(offset);
             writer.Write(count);
-            return new ArrayPacket(buf, 0, writer.Position);
+            return pk.Resize(writer.Position);
         }
         finally
         {
@@ -171,18 +172,18 @@ internal static class KvPacket
     }
 
     /// <summary>编码 DeleteByPattern 请求（tableName + pattern）</summary>
-    public static IPacket EncodeDeleteByPattern(String tableName, String pattern)
+    public static IOwnerPacket EncodeDeleteByPattern(String tableName, String pattern)
     {
         var tableBytes = _encoding.GetPooledEncodedBytes(tableName ?? "default");
         var patternBytes = _encoding.GetPooledEncodedBytes(pattern);
         try
         {
             var bufSize = 16 + tableBytes.Length + patternBytes.Length;
-            var buf = new Byte[bufSize];
-            var writer = new SpanWriter(buf, 0, bufSize);
+            var pk = new OwnerPacket(bufSize);
+            var writer = new SpanWriter(pk);
             WriteString(ref writer, tableBytes.AsSpan());
             WriteString(ref writer, patternBytes.AsSpan());
-            return new ArrayPacket(buf, 0, writer.Position);
+            return pk.Resize(writer.Position);
         }
         finally
         {
@@ -192,12 +193,12 @@ internal static class KvPacket
     }
 
     /// <summary>编码 GetAll 请求（tableName + keys[]）</summary>
-    public static IPacket EncodeGetAll(String tableName, String[] keys)
+    public static IOwnerPacket EncodeGetAll(String tableName, String[] keys)
     {
         using var tableBytes = _encoding.GetPooledEncodedBytes(tableName ?? "default");
         var bufSize = 16 + tableBytes.Length + 4 + keys.Sum(k => 4 + _encoding.GetByteCount(k));
-        var buf = new Byte[bufSize];
-        var writer = new SpanWriter(buf, 0, bufSize);
+        var pk = new OwnerPacket(bufSize);
+        var writer = new SpanWriter(pk);
         WriteString(ref writer, tableBytes.AsSpan());
         writer.Write(keys.Length);
         foreach (var key in keys)
@@ -206,17 +207,17 @@ internal static class KvPacket
             WriteString(ref writer, pooledKeyBytes.AsSpan());
         }
 
-        return new ArrayPacket(buf, 0, writer.Position);
+        return pk.Resize(writer.Position);
     }
 
     /// <summary>编码 SetAll 请求（tableName + ttlSeconds + values dict）</summary>
-    public static IPacket EncodeSetAll(String tableName, IDictionary<String, Byte[]?> values, Int32 ttlSeconds)
+    public static IOwnerPacket EncodeSetAll(String tableName, IDictionary<String, Byte[]?> values, Int32 ttlSeconds)
     {
         using var tableBytes = _encoding.GetPooledEncodedBytes(tableName ?? "default");
         var valueBytesLengthTotal = values.Sum(kvp => 8 + _encoding.GetByteCount(kvp.Key) + (kvp.Value?.Length ?? 0));
         var bufSize = 32 + tableBytes.Length + valueBytesLengthTotal;
-        var buf = new Byte[bufSize];
-        var writer = new SpanWriter(buf, 0, bufSize);
+        var pk = new OwnerPacket(bufSize);
+        var writer = new SpanWriter(pk);
         WriteString(ref writer, tableBytes.AsSpan());
         writer.Write(ttlSeconds);
         writer.Write(values.Count);
@@ -226,7 +227,7 @@ internal static class KvPacket
                 WriteString(ref writer, pooledKeyBytes.AsSpan());
             WriteNullableBytes(ref writer, keyValuePair.Value);
         }
-        return new ArrayPacket(buf, 0, writer.Position);
+        return pk.Resize(writer.Position);
     }
 
     #endregion
@@ -354,7 +355,7 @@ internal static class KvPacket
     public static IPacket EncodeBoolean(Boolean value) => value ? TruePacket : FalsePacket;
 
     /// <summary>编码 Int32 响应（4 字节小端）</summary>
-    public static IPacket EncodeInt32(Int32 value)
+    public static IOwnerPacket EncodeInt32(Int32 value)
     {
         var pk = new OwnerPacket(4);
         new SpanWriter(pk).Write(value);
@@ -362,7 +363,7 @@ internal static class KvPacket
     }
 
     /// <summary>编码 Int64 响应（8 字节小端）</summary>
-    public static IPacket EncodeInt64(Int64 value)
+    public static IOwnerPacket EncodeInt64(Int64 value)
     {
         var pk = new OwnerPacket(8);
         new SpanWriter(pk).Write(value);
@@ -370,7 +371,7 @@ internal static class KvPacket
     }
 
     /// <summary>编码 Double 响应（8 字节小端）</summary>
-    public static IPacket EncodeDouble(Double value)
+    public static IOwnerPacket EncodeDouble(Double value)
     {
         var pk = new OwnerPacket(8);
         new SpanWriter(pk).Write(value);
@@ -381,7 +382,7 @@ internal static class KvPacket
     public static IPacket EncodeEmpty() => EmptyPacket;
 
     /// <summary>编码字符串数组响应（Int32 count + 每项 EncodedString）</summary>
-    public static IPacket EncodeStringArray(String[] keys)
+    public static IOwnerPacket EncodeStringArray(String[] keys)
     {
         if (keys.Length == 0)
         {
@@ -391,8 +392,8 @@ internal static class KvPacket
         }
 
         var bufSize = 4 + keys.Sum(k => 4 + _encoding.GetByteCount(k));
-        var buf = new Byte[bufSize];
-        var writer = new SpanWriter(buf, 0, bufSize);
+        var pk = new OwnerPacket(bufSize);
+        var writer = new SpanWriter(pk);
         writer.Write(keys.Length);
         foreach (var key in keys)
         {
@@ -400,31 +401,31 @@ internal static class KvPacket
             WriteString(ref writer, pooledKeyBytes.AsSpan());
         }
 
-        return new ArrayPacket(buf, 0, writer.Position);
+        return pk.Resize(writer.Position);
     }
 
     /// <summary>编码 GetAll 响应（Int32 keyCount + 每项 key EncodedString + value nullable bytes）</summary>
-    public static IPacket EncodeGetAllResponse(String[] keys, IDictionary<String, IOwnerPacket?> data)
+    public static IOwnerPacket EncodeGetAllResponse(String[] keys, IDictionary<String, IOwnerPacket?> data)
     {
         // 预估大小：count(4) + n * (keyLen(4)+keyBytes + valueFlag(1)+valueLen(4)+valueBytes)
         var estSize = 4 + keys.Length * 16 + keys.Sum(k => _encoding.GetByteCount(k));
         foreach (var key in keys)
         {
-            if (data.TryGetValue(key, out var pk) && pk != null)
-                estSize += pk.Length;
+            if (data.TryGetValue(key, out var val) && val != null)
+                estSize += val.Length;
         }
 
-        var buf = new Byte[estSize + 64];
-        var writer = new SpanWriter(buf, 0, buf.Length);
+        var pk = new OwnerPacket(estSize + 64);
+        var writer = new SpanWriter(pk);
         writer.Write(keys.Length);
         foreach (var key in keys)
         {
             using (var pooledKeyBytes = _encoding.GetPooledEncodedBytes(key))
                 WriteString(ref writer, pooledKeyBytes.AsSpan());
 
-            if (data.TryGetValue(key, out var pk) && pk != null)
+            if (data.TryGetValue(key, out var val) && val != null)
             {
-                var valueSpan = pk.GetSpan();
+                var valueSpan = val.GetSpan();
                 writer.WriteByte(1);
                 writer.WriteEncodedInt(valueSpan.Length);
                 writer.Write(valueSpan);
@@ -434,7 +435,7 @@ internal static class KvPacket
                 writer.WriteByte(0);
             }
         }
-        return new ArrayPacket(buf, 0, writer.Position);
+        return pk.Resize(writer.Position);
     }
 
     #endregion
@@ -513,12 +514,6 @@ internal static class KvPacket
     #endregion
 
     #region 私有辅助
-
-    private static void WriteString(ref SpanWriter writer, Byte[] strBytes)
-    {
-        writer.WriteEncodedInt(strBytes.Length);
-        if (strBytes.Length > 0) writer.Write(strBytes);
-    }
 
     private static void WriteString(ref SpanWriter writer, ReadOnlySpan<Byte> strBytes)
     {

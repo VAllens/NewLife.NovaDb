@@ -242,46 +242,50 @@ public class BinlogWriter : IDisposable
 
         var encoding = Encoding.UTF8;
 
-        // 先构造 Data 部分（不含 RecordLength 和 checksum）
-        using var dataWriter = new PooledBufferWriter(initialCapacity: 1024);
-
-        dataWriter.WriteByte((Byte)eventType);
-        dataWriter.WriteInt64(DateTime.UtcNow.Ticks);
-
-        // 数据库名
+        // 预估缓冲区大小：4(RecordLen) + 1(EventType) + 8(Timestamp) + 4(DbLen) + dbBytes + 4(SqlLen) + sqlBytes + 4(AffectedRows) + 4(CRC32)
         var dbByteLength = encoding.GetByteCount(_database);
-        dataWriter.WriteInt32(dbByteLength);
-        var dbBuffer = dataWriter.GetWritableSpan(dbByteLength);
-        encoding.GetBytes(_database, dbBuffer);
-
-        // SQL 文本
         var sqlByteLength = encoding.GetByteCount(sql);
-        dataWriter.WriteInt32(sqlByteLength);
-        var sqlBuffer = dataWriter.GetWritableSpan(sqlByteLength);
-        encoding.GetBytes(sql, sqlBuffer);
+        var dataLen = 1 + 8 + 4 + dbByteLength + 4 + sqlByteLength + 4;
+        var totalLen = 4 + dataLen + 4;
 
-        dataWriter.WriteInt32(affectedRows);
+        var buf = ArrayPool<Byte>.Shared.Rent(totalLen);
+        try
+        {
+            var writer = new SpanWriter(buf, 0, totalLen);
 
-        // 计算 CRC32
-        var dataLen = dataWriter.WrittenCount;
-        var checksum = Crc32.Compute(dataWriter.Buffer.AsSpan(0, dataLen));
+            // RecordLength = dataLen + 4(CRC32)
+            writer.Write(dataLen + 4);
 
-        // 写入记录：[RecordLength: 4B] [Data] [Checksum: 4B]
-        var recordLength = dataLen + 4;
-        var totalLen = checked(4 + dataLen + 4);
+            // Data 部分起始位置
+            var dataStart = writer.Position;
 
-        using var recordWriter = new PooledBufferWriter(initialCapacity: totalLen);
+            writer.WriteByte((Byte)eventType);
+            writer.Write(DateTime.UtcNow.Ticks);
 
-        BinaryPrimitives.WriteInt32LittleEndian(recordWriter.GetWritableSpan(4), recordLength);
+            // 数据库名
+            writer.Write(dbByteLength);
+            encoding.GetBytes(_database, buf.AsSpan(writer.Position, dbByteLength));
+            writer.Advance(dbByteLength);
 
-        // 拷贝 Data（一次）
-        recordWriter.WriteBytes(dataWriter.Buffer, 0, dataLen);
+            // SQL 文本
+            writer.Write(sqlByteLength);
+            encoding.GetBytes(sql, buf.AsSpan(writer.Position, sqlByteLength));
+            writer.Advance(sqlByteLength);
 
-        BinaryPrimitives.WriteUInt32LittleEndian(recordWriter.GetWritableSpan(4), checksum);
+            writer.Write(affectedRows);
 
-        _stream.Position = _stream.Length;
-        _stream.Write(recordWriter.Buffer, 0, recordWriter.WrittenCount);
-        _stream.Flush();
+            // CRC32 覆盖 Data 部分
+            var checksum = Crc32.Compute(buf, dataStart, dataLen);
+            writer.Write(checksum);
+
+            _stream.Position = _stream.Length;
+            _stream.Write(buf, 0, writer.Position);
+            _stream.Flush();
+        }
+        finally
+        {
+            ArrayPool<Byte>.Shared.Return(buf);
+        }
 
         _position++;
     }

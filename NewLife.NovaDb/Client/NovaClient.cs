@@ -129,7 +129,7 @@ public class NovaClient : DisposeBase
     public async Task<Boolean> KvSetAsync(String tableName, String key, Byte[]? value, Int32 ttlSeconds = 0)
     {
         EnsureOpen();
-        var pk = KvPacket.EncodeSet(tableName, key, value, ttlSeconds);
+        using var pk = KvPacket.EncodeSet(tableName, key, value, ttlSeconds);
         var result = await _client!.InvokeAsync<IPacket>("Kv/Set", pk).ConfigureAwait(false);
         return KvPacket.DecodeBoolean(result);
     }
@@ -141,7 +141,7 @@ public class NovaClient : DisposeBase
     public async Task<Byte[]?> KvGetAsync(String tableName, String key)
     {
         EnsureOpen();
-        var pk = KvPacket.EncodeTableKey(tableName, key);
+        using var pk = KvPacket.EncodeTableKey(tableName, key);
         var result = await _client!.InvokeAsync<IPacket>("Kv/Get", pk).ConfigureAwait(false);
         return KvPacket.DecodeNullableValue(result);
     }
@@ -153,7 +153,7 @@ public class NovaClient : DisposeBase
     public async Task<Boolean> KvDeleteAsync(String tableName, String key)
     {
         EnsureOpen();
-        var pk = KvPacket.EncodeTableKey(tableName, key);
+        using var pk = KvPacket.EncodeTableKey(tableName, key);
         var result = await _client!.InvokeAsync<IPacket>("Kv/Delete", pk).ConfigureAwait(false);
         return KvPacket.DecodeBoolean(result);
     }
@@ -165,7 +165,7 @@ public class NovaClient : DisposeBase
     public async Task<Boolean> KvExistsAsync(String tableName, String key)
     {
         EnsureOpen();
-        var pk = KvPacket.EncodeTableKey(tableName, key);
+        using var pk = KvPacket.EncodeTableKey(tableName, key);
         var result = await _client!.InvokeAsync<IPacket>("Kv/Exists", pk).ConfigureAwait(false);
         return KvPacket.DecodeBoolean(result);
     }
@@ -177,7 +177,7 @@ public class NovaClient : DisposeBase
     public async Task<Int32> KvDeleteByPatternAsync(String tableName, String pattern)
     {
         EnsureOpen();
-        var pk = KvPacket.EncodeDeleteByPattern(tableName, pattern);
+        using var pk = KvPacket.EncodeDeleteByPattern(tableName, pattern);
         var result = await _client!.InvokeAsync<IPacket>("Kv/DeleteByPattern", pk).ConfigureAwait(false);
         return KvPacket.DecodeInt32(result);
     }
@@ -188,7 +188,7 @@ public class NovaClient : DisposeBase
     public async Task<Int32> KvGetCountAsync(String tableName)
     {
         EnsureOpen();
-        var pk = KvPacket.EncodeTableOnly(tableName);
+        using var pk = KvPacket.EncodeTableOnly(tableName);
         var result = await _client!.InvokeAsync<IPacket>("Kv/GetCount", pk).ConfigureAwait(false);
         return KvPacket.DecodeInt32(result);
     }
@@ -199,7 +199,7 @@ public class NovaClient : DisposeBase
     public async Task<String[]> KvGetAllKeysAsync(String tableName)
     {
         EnsureOpen();
-        var pk = KvPacket.EncodeTableOnly(tableName);
+        using var pk = KvPacket.EncodeTableOnly(tableName);
         var result = await _client!.InvokeAsync<IPacket>("Kv/GetAllKeys", pk).ConfigureAwait(false);
         return KvPacket.DecodeStringArray(result);
     }
@@ -209,7 +209,7 @@ public class NovaClient : DisposeBase
     public async Task KvClearAsync(String tableName)
     {
         EnsureOpen();
-        var pk = KvPacket.EncodeTableOnly(tableName);
+        using var pk = KvPacket.EncodeTableOnly(tableName);
         await _client!.InvokeAsync<IPacket>("Kv/Clear", pk).ConfigureAwait(false);
     }
 
@@ -221,7 +221,7 @@ public class NovaClient : DisposeBase
     public async Task<Boolean> KvSetExpireAsync(String tableName, String key, Int32 ttlSeconds)
     {
         EnsureOpen();
-        var pk = KvPacket.EncodeSetExpire(tableName, key, ttlSeconds);
+        using var pk = KvPacket.EncodeSetExpire(tableName, key, ttlSeconds);
         var result = await _client!.InvokeAsync<IPacket>("Kv/SetExpire", pk).ConfigureAwait(false);
         return KvPacket.DecodeBoolean(result);
     }
@@ -233,7 +233,7 @@ public class NovaClient : DisposeBase
     public async Task<Double> KvGetExpireAsync(String tableName, String key)
     {
         EnsureOpen();
-        var pk = KvPacket.EncodeTableKey(tableName, key);
+        using var pk = KvPacket.EncodeTableKey(tableName, key);
         var result = await _client!.InvokeAsync<IPacket>("Kv/GetExpire", pk).ConfigureAwait(false);
         return KvPacket.DecodeDouble(result);
     }
@@ -246,7 +246,7 @@ public class NovaClient : DisposeBase
     public async Task<Int64> KvIncrementAsync(String tableName, String key, Int64 value)
     {
         EnsureOpen();
-        var pk = KvPacket.EncodeIncrement(tableName, key, value);
+        using var pk = KvPacket.EncodeIncrement(tableName, key, value);
         var result = await _client!.InvokeAsync<IPacket>("Kv/Increment", pk).ConfigureAwait(false);
         return KvPacket.DecodeInt64(result);
     }
@@ -259,7 +259,7 @@ public class NovaClient : DisposeBase
     public async Task<Double> KvIncrementDoubleAsync(String tableName, String key, Double value)
     {
         EnsureOpen();
-        var pk = KvPacket.EncodeIncrementDouble(tableName, key, value);
+        using var pk = KvPacket.EncodeIncrementDouble(tableName, key, value);
         var result = await _client!.InvokeAsync<IPacket>("Kv/IncrementDouble", pk).ConfigureAwait(false);
         return KvPacket.DecodeDouble(result);
     }
@@ -273,7 +273,7 @@ public class NovaClient : DisposeBase
     public async Task<String[]> KvSearchAsync(String tableName, String pattern, Int32 offset = 0, Int32 count = -1)
     {
         EnsureOpen();
-        var pk = KvPacket.EncodeSearch(tableName, pattern, offset, count);
+        using var pk = KvPacket.EncodeSearch(tableName, pattern, offset, count);
         var result = await _client!.InvokeAsync<IPacket>("Kv/Search", pk).ConfigureAwait(false);
         return KvPacket.DecodeStringArray(result);
     }
@@ -285,7 +285,7 @@ public class NovaClient : DisposeBase
     public async Task<IDictionary<String, Byte[]?>> KvGetAllAsync(String tableName, String[] keys)
     {
         EnsureOpen();
-        var pk = KvPacket.EncodeGetAll(tableName, keys);
+        using var pk = KvPacket.EncodeGetAll(tableName, keys);
         var result = await _client!.InvokeAsync<IPacket>("Kv/GetAll", pk).ConfigureAwait(false);
         return KvPacket.DecodeGetAllResponse(result);
     }
@@ -298,7 +298,7 @@ public class NovaClient : DisposeBase
     public async Task<Int32> KvSetAllAsync(String tableName, IDictionary<String, Byte[]?> values, Int32 ttlSeconds = 0)
     {
         EnsureOpen();
-        var pk = KvPacket.EncodeSetAll(tableName, values, ttlSeconds);
+        using var pk = KvPacket.EncodeSetAll(tableName, values, ttlSeconds);
         var result = await _client!.InvokeAsync<IPacket>("Kv/SetAll", pk).ConfigureAwait(false);
         return KvPacket.DecodeInt32(result);
     }
