@@ -1,7 +1,7 @@
 ﻿namespace NewLife.NovaDb.Engine.Flux;
 
 /// <summary>消息 ID，格式为 "timestamp-sequence"</summary>
-public class MessageId : IComparable<MessageId>, IEquatable<MessageId>
+public readonly struct MessageId : IComparable<MessageId?>, IEquatable<MessageId?>
 {
     /// <summary>UTC 时间戳（Ticks）</summary>
     public Int64 Timestamp { get; }
@@ -69,10 +69,11 @@ public class MessageId : IComparable<MessageId>, IEquatable<MessageId>
     {
         if (other == null) return 1;
 
-        var cmp = Timestamp.CompareTo(other.Timestamp);
+        var mid = other.Value;
+        var cmp = Timestamp.CompareTo(mid.Timestamp);
         if (cmp != 0) return cmp;
 
-        return Sequence.CompareTo(other.Sequence);
+        return Sequence.CompareTo(mid.Sequence);
     }
 
     /// <summary>判断是否相等</summary>
@@ -81,7 +82,8 @@ public class MessageId : IComparable<MessageId>, IEquatable<MessageId>
     public Boolean Equals(MessageId? other)
     {
         if (other == null) return false;
-        return Timestamp == other.Timestamp && Sequence == other.Sequence;
+        var mid = other.Value;
+        return Timestamp == mid.Timestamp && Sequence == mid.Sequence;
     }
 
     /// <summary>判断是否相等</summary>
@@ -105,4 +107,16 @@ public class MessageId : IComparable<MessageId>, IEquatable<MessageId>
         }
 #endif
     }
+
+    /// <summary>判断两个消息 ID 是否相等</summary>
+    /// <param name="left">左操作数</param>
+    /// <param name="right">右操作数</param>
+    /// <returns>是否相等</returns>
+    public static Boolean operator ==(MessageId left, MessageId right) => left.Timestamp == right.Timestamp && left.Sequence == right.Sequence;
+
+    /// <summary>判断两个消息 ID 是否不等</summary>
+    /// <param name="left">左操作数</param>
+    /// <param name="right">右操作数</param>
+    /// <returns>是否不等</returns>
+    public static Boolean operator !=(MessageId left, MessageId right) => !(left == right);
 }
